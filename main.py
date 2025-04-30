@@ -12,7 +12,7 @@ JUNO_VOICE_ID = os.getenv("JUNO_VOICE_ID")
 
 app = FastAPI()
 
-@app.post("/process_audio")
+@app.post("/api/process_audio")
 async def process_audio(audio: UploadFile = File(...)):
     try:
         file_id = str(uuid.uuid4())
