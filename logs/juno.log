@@ -1,0 +1,15 @@
+2025-05-01 02:25:22,759 [WARNING] Ritual mode 'mirror' not found.
+2025-05-01 02:25:22,759 [INFO] Transcribing audio: temp/cc10dbef-b688-4a68-9f31-c9f0a84290db.mp3
+2025-05-01 02:25:22,759 [INFO] Generating response to: Hello, I am Juno.
+2025-05-01 02:25:22,759 [INFO] Generating voice to: temp/response_921d0da7-65f4-42e8-b5fb-255d99cd6bbd.mp3
+2025-05-01 02:25:22,760 [INFO] Reply sent successfully. Transcript: Hello, I am Juno.
+2025-05-01 03:26:23,840 [INFO] Transcribing audio: temp/3c2aad1b-10e8-4e8e-b8e2-28bcfdd29e92.mp3
+2025-05-01 03:26:23,840 [INFO] Generating response to: Hello, I am Juno.
+2025-05-01 03:26:23,840 [INFO] Generating voice using ElevenLabs...
+2025-05-01 03:26:24,478 [INFO] Voice generation complete.
+2025-05-01 03:26:24,478 [INFO] Reply sent successfully. Transcript: Hello, I am Juno.
+2025-05-01 03:27:23,072 [INFO] Transcribing audio: temp/a2fa0980-598a-499e-acc7-3cf3adc88202.mp3
+2025-05-01 03:27:23,072 [INFO] Generating response to: Hello, I am Juno.
+2025-05-01 03:27:23,072 [INFO] Generating voice using ElevenLabs...
+2025-05-01 03:27:23,701 [INFO] Voice generation complete.
+2025-05-01 03:27:23,701 [INFO] Reply sent successfully. Transcript: Hello, I am Juno.
