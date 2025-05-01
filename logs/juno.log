@@ -13,3 +13,13 @@
 2025-05-01 03:27:23,072 [INFO] Generating voice using ElevenLabs...
 2025-05-01 03:27:23,701 [INFO] Voice generation complete.
 2025-05-01 03:27:23,701 [INFO] Reply sent successfully. Transcript: Hello, I am Juno.
+2025-05-01 04:13:25,574 [INFO] Transcribing audio with Whisper API: temp/fbff949b-69ab-41f5-b888-07eb6b670b8e.mp3
+2025-05-01 04:13:27,290 [INFO] error_code=None error_message="Invalid file format. Supported formats: ['flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm']" error_param=None error_type=invalid_request_error message='OpenAI API error received' stream_error=False
+2025-05-01 04:13:27,291 [ERROR] Error processing audio: Invalid file format. Supported formats: ['flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm']
+2025-05-01 04:22:09,326 [INFO] Transcribing audio with Whisper API: temp/c0cb221b-8250-41df-ae8d-c9005bbcc8ea.mp3
+2025-05-01 04:22:10,729 [INFO] Transcription result: Oh, you thought I was being nice? No, baby. This was just me holding you back. Now buckle up. I brought flashcards and receipts.
+2025-05-01 04:22:10,730 [INFO] Generating GPT response for prompt: Oh, you thought I was being nice? No, baby. This was just me holding you back. Now buckle up. I brought flashcards and receipts.
+2025-05-01 04:22:11,353 [INFO] GPT reply: It sounds like you're ready to make some serious moves! How can I assist you today? Let's tackle those flashcards and receipts head-on.
+2025-05-01 04:22:11,353 [INFO] Generating voice using ElevenLabs...
+2025-05-01 04:22:12,888 [INFO] Voice generation complete.
+2025-05-01 04:22:12,888 [INFO] Reply sent successfully. Transcript: Oh, you thought I was being nice? No, baby. This was just me holding you back. Now buckle up. I brought flashcards and receipts.
