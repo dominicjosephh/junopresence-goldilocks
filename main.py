@@ -2,6 +2,7 @@ import os
 import uuid
 import shutil
 import logging
+import requests
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
@@ -29,7 +30,7 @@ logging.basicConfig(
 # Initialize FastAPI
 app = FastAPI()
 
-# Placeholder whisper + GPT + ElevenLabs processing (to be filled with actual logic)
+# Placeholder whisper + GPT processing (to be filled with actual logic)
 def transcribe_audio(audio_path: str) -> str:
     logging.info(f"Transcribing audio: {audio_path}")
     return "Hello, I am Juno."  # Mocked result
@@ -38,10 +39,29 @@ def generate_response(text: str) -> str:
     logging.info(f"Generating response to: {text}")
     return f"You said: {text}"  # Mocked GPT reply
 
-def generate_voice(text: str, output_path: str):
-    logging.info(f"Generating voice to: {output_path}")
-    with open(output_path, "wb") as f:
-        f.write(b"FAKEAUDIO")  # Mock binary output for placeholder
+def generate_voice_elevenlabs(text: str, output_path: str):
+    logging.info(f"Generating voice using ElevenLabs...")
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{JUNO_VOICE_ID}"
+    headers = {
+        "Accept": "audio/mpeg",
+        "Content-Type": "application/json",
+        "xi-api-key": ELEVENLABS_API_KEY
+    }
+    data = {
+        "text": text,
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.8
+        }
+    }
+    response = requests.post(url, json=data, headers=headers)
+    if response.status_code == 200:
+        with open(output_path, "wb") as f:
+            f.write(response.content)
+        logging.info("Voice generation complete.")
+    else:
+        logging.error(f"Failed to generate voice: {response.status_code} {response.text}")
+        raise Exception("Voice generation failed.")
 
 # API route
 @app.post("/api/process_audio")
@@ -71,7 +91,7 @@ async def process_audio(
 
         # Save generated voice
         output_path = os.path.join(TEMP_DIR, f"response_{uuid.uuid4()}.mp3")
-        generate_voice(reply, output_path)
+        generate_voice_elevenlabs(reply, output_path)
 
         logging.info(f"Reply sent successfully. Transcript: {transcript}")
         return FileResponse(output_path, media_type="audio/mpeg")
