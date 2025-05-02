@@ -62,9 +62,27 @@ async def process_audio(
         print(f"[ERROR] Transcription failed: {e}")
         return JSONResponse(content={"error": "Transcription failed"})
 
-    # Generate a reply (for demo: echo back the transcript)
-    reply_text = f"You said: {text}"
-    print(f"[INFO] Reply text to synthesize: {reply_text}")
+    # Generate a reply using GPT
+    try:
+        print("[INFO] Generating reply using OpenAI GPT...")
+        gpt_response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+            json={
+                "model": "gpt-3.5-turbo",  # or "gpt-4" if you have access
+                "messages": [
+                    {"role": "system", "content": "You are Juno, a witty, helpful, and emotionally aware AI assistant."},
+                    {"role": "user", "content": text}
+                ]
+            }
+        )
+        gpt_response.raise_for_status()
+        gpt_data = gpt_response.json()
+        reply_text = gpt_data["choices"][0]["message"]["content"].strip()
+        print(f"[INFO] GPT reply: {reply_text}")
+    except Exception as e:
+        print(f"[ERROR] GPT reply generation failed: {e}")
+        reply_text = "I'm sorry, something went wrong when trying to respond."
 
     # Use ElevenLabs to synthesize the reply
     try:
