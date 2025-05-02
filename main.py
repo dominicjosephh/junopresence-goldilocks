@@ -1,5 +1,5 @@
 import os
-import openai
+import uuid
 import requests
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse, FileResponse
@@ -35,19 +35,19 @@ async def process_audio(
                 status_code=404
             )
 
-    # Save uploaded file temporarily
+    # Save uploaded file temporarily (unique name)
     temp_dir = "temp"
     os.makedirs(temp_dir, exist_ok=True)
-    temp_file_path = os.path.join(temp_dir, audio.filename)
-    with open(temp_file_path, "wb") as f:
+    unique_id = uuid.uuid4().hex
+    temp_input_path = os.path.join(temp_dir, f"input_{unique_id}.mp3")
+    with open(temp_input_path, "wb") as f:
         f.write(await audio.read())
-
-    print(f"[INFO] Saved uploaded file to: {temp_file_path}")
+    print(f"[INFO] Saved uploaded file to: {temp_input_path}")
 
     # Transcribe with OpenAI Whisper
     try:
         print("[INFO] Starting transcription with Whisper API...")
-        with open(temp_file_path, "rb") as f:
+        with open(temp_input_path, "rb") as f:
             transcript_response = requests.post(
                 "https://api.openai.com/v1/audio/transcriptions",
                 headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
@@ -64,6 +64,7 @@ async def process_audio(
 
     # Generate a reply (for demo: echo back the transcript)
     reply_text = f"You said: {text}"
+    print(f"[INFO] Reply text to synthesize: {reply_text}")
 
     # Use ElevenLabs to synthesize the reply
     try:
@@ -87,11 +88,16 @@ async def process_audio(
         print(f"[ERROR] ElevenLabs TTS failed: {e}")
         return JSONResponse(content={"error": "TTS generation failed"})
 
-    # Save synthesized audio
-    output_path = os.path.join(temp_dir, "reply.mp3")
+    # Check if ElevenLabs returned actual audio
+    if "audio/mpeg" not in tts_response.headers.get("Content-Type", ""):
+        print(f"[ERROR] ElevenLabs did not return audio. Response: {tts_response.text}")
+        return JSONResponse(content={"error": "TTS generation failed (invalid audio response)"})
+
+    # Save synthesized audio (unique filename)
+    output_path = os.path.join(temp_dir, f"reply_{unique_id}.mp3")
     with open(output_path, "wb") as out:
         out.write(tts_response.content)
 
-    print(f"[INFO] Reply audio saved to: {output_path}")
+    print(f"[INFO] Reply audio saved to: {output_path} (size: {len(tts_response.content)} bytes)")
 
     return FileResponse(output_path, media_type="audio/mpeg")
