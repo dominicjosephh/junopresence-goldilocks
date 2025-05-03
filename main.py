@@ -1,121 +1,61 @@
+# main.py
 import os
-import uuid
-import requests
-from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import JSONResponse, FileResponse
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-JUNO_VOICE_ID = os.getenv("JUNO_VOICE_ID")
+from fastapi import FastAPI, File, UploadFile, Form
+from fastapi.responses import JSONResponse
+from typing import Optional
 
 app = FastAPI()
+
+def run_whisper_transcription(file_path: str) -> str:
+    """
+    Replace this stub with your actual Whisper transcription logic.
+    For example:
+        import whisper
+        model = whisper.load_model("base")
+        result = model.transcribe(file_path)
+        return result["text"]
+    """
+    # TODO: implement transcription
+    return "transcription not yet implemented"
 
 @app.post("/api/process_audio")
 async def process_audio(
     audio: UploadFile = File(...),
-    ritual_mode: str = Form("none")
+    ritual_mode: Optional[str] = Form(None)
 ):
-    print(f"[INFO] Received audio file: {audio.filename}")
-    print(f"[INFO] Ritual mode: {ritual_mode}")
-
-    # Handle ritual mode first
-    if ritual_mode and ritual_mode.lower() != "none":
+    # Serve a pre-recorded ritual if requested
+    if ritual_mode:
         ritual_file = f"rituals/Juno_{ritual_mode.capitalize()}_Mode.m4a"
         if os.path.exists(ritual_file):
-            print(f"[RITUAL] Serving ritual audio file: {ritual_file}")
-            return FileResponse(ritual_file, media_type="audio/x-m4a")
-        else:
-            print(f"[RITUAL] Ritual file not found: {ritual_file}")
             return JSONResponse(
-                content={"error": f"Ritual file not found: {ritual_file}"},
-                status_code=404
+                status_code=200,
+                content={"ritual_mode": ritual_mode, "file": ritual_file}
+            )
+        else:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"Ritual '{ritual_mode}' not found"}
             )
 
-    # Save uploaded file temporarily (unique name)
+    # Otherwise, save the upload to temp and transcribe
     temp_dir = "temp"
     os.makedirs(temp_dir, exist_ok=True)
-    unique_id = uuid.uuid4().hex
-    temp_input_path = os.path.join(temp_dir, f"input_{unique_id}.mp3")
-    with open(temp_input_path, "wb") as f:
+    file_path = os.path.join(temp_dir, audio.filename)
+    with open(file_path, "wb") as f:
         f.write(await audio.read())
-    print(f"[INFO] Saved uploaded file to: {temp_input_path}")
 
-    # Transcribe with OpenAI Whisper
     try:
-        print("[INFO] Starting transcription with Whisper API...")
-        with open(temp_input_path, "rb") as f:
-            transcript_response = requests.post(
-                "https://api.openai.com/v1/audio/transcriptions",
-                headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
-                files={"file": (audio.filename, f, audio.content_type)},
-                data={"model": "whisper-1"}
-            )
-        transcript_response.raise_for_status()
-        transcript_data = transcript_response.json()
-        text = transcript_data.get("text", "").strip()
-        print(f"[INFO] Transcription result: {text}")
+        transcript = run_whisper_transcription(file_path)
     except Exception as e:
-        print(f"[ERROR] Transcription failed: {e}")
-        return JSONResponse(content={"error": "Transcription failed"})
-
-    # Generate a reply using GPT
-    try:
-        print("[INFO] Generating reply using OpenAI GPT...")
-        gpt_response = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
-            json={
-                "model": "gpt-3.5-turbo",  # or "gpt-4" if you have access
-                "messages": [
-                    {"role": "system", "content": "You are Juno, a witty, helpful, and emotionally aware AI assistant."},
-                    {"role": "user", "content": text}
-                ]
-            }
+        # Clean up and return an error
+        os.remove(file_path)
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Transcription failed: {str(e)}"}
         )
-        gpt_response.raise_for_status()
-        gpt_data = gpt_response.json()
-        reply_text = gpt_data["choices"][0]["message"]["content"].strip()
-        print(f"[INFO] GPT reply: {reply_text}")
-    except Exception as e:
-        print(f"[ERROR] GPT reply generation failed: {e}")
-        reply_text = "I'm sorry, something went wrong when trying to respond."
 
-    # Use ElevenLabs to synthesize the reply
-    try:
-        print("[INFO] Starting ElevenLabs TTS generation...")
-        tts_response = requests.post(
-            f"https://api.elevenlabs.io/v1/text-to-speech/{JUNO_VOICE_ID}",
-            headers={
-                "xi-api-key": ELEVENLABS_API_KEY,
-                "Content-Type": "application/json"
-            },
-            json={
-                "text": reply_text,
-                "voice_settings": {
-                    "stability": 0.5,
-                    "similarity_boost": 0.75
-                }
-            }
-        )
-        tts_response.raise_for_status()
-    except Exception as e:
-        print(f"[ERROR] ElevenLabs TTS failed: {e}")
-        return JSONResponse(content={"error": "TTS generation failed"})
+    # Clean up the temporary file
+    os.remove(file_path)
 
-    # Check if ElevenLabs returned actual audio
-    if "audio/mpeg" not in tts_response.headers.get("Content-Type", ""):
-        print(f"[ERROR] ElevenLabs did not return audio. Response: {tts_response.text}")
-        return JSONResponse(content={"error": "TTS generation failed (invalid audio response)"})
-
-    # Save synthesized audio (unique filename)
-    output_path = os.path.join(temp_dir, f"reply_{unique_id}.mp3")
-    with open(output_path, "wb") as out:
-        out.write(tts_response.content)
-
-    print(f"[INFO] Reply audio saved to: {output_path} (size: {len(tts_response.content)} bytes)")
-
-    return FileResponse(output_path, media_type="audio/mpeg")
+    # Return the transcript as JSON
+    return JSONResponse(status_code=200, content={"transcript": transcript})
