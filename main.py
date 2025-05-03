@@ -1,12 +1,17 @@
 # main.py
 import os
+from dotenv import load_dotenv
+load_dotenv()  # pull in your .env variables
+
 import openai
 from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.responses import JSONResponse
 from typing import Optional
 
-# Make sure you have OPENAI_API_KEY in your environment
+# Load API keys from env
 openai.api_key = os.getenv("OPENAI_API_KEY")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 
 app = FastAPI()
 
@@ -20,7 +25,7 @@ async def process_audio(
     audio: UploadFile = File(...),
     ritual_mode: Optional[str] = Form(None)
 ):
-    # Ritual handling (unchanged)
+    # If a ritual mode is requested, serve that file instead
     if ritual_mode:
         ritual_file = f"rituals/Juno_{ritual_mode.capitalize()}_Mode.m4a"
         if os.path.exists(ritual_file):
@@ -30,14 +35,13 @@ async def process_audio(
             )
         return JSONResponse(status_code=404, content={"error": "Ritual not found"})
 
-    # Save upload to temp
+    # Otherwise, save the upload and transcribe
     temp_dir = "temp"
     os.makedirs(temp_dir, exist_ok=True)
     file_path = os.path.join(temp_dir, audio.filename)
     with open(file_path, "wb") as f:
         f.write(await audio.read())
 
-    # Transcribe
     try:
         transcript = run_whisper_transcription(file_path)
     except Exception as e:
