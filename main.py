@@ -4,8 +4,8 @@ import io
 import base64
 from dotenv import load_dotenv
 
-# Load .env variables
-load_dotenv()
+# Load environment variables
+load_dotenv()  # expects OPENAI_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID
 
 import openai
 import requests
@@ -13,22 +13,24 @@ from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.responses import JSONResponse
 from typing import Optional
 
-# Load keys from environment
+# Configure API keys
 openai.api_key = os.getenv("OPENAI_API_KEY")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 
 app = FastAPI()
 
+
 def run_whisper_transcription(file_path: str) -> str:
     with open(file_path, "rb") as f:
         resp = openai.Audio.transcribe("whisper-1", f)
     return resp["text"].strip()
 
+
 def run_chatgpt_response(user_text: str) -> str:
     messages = [
         {"role": "system", "content": "You are Juno, a witty, caring companion."},
-        {"role": "user",   "content": user_text}
+        {"role": "user", "content": user_text},
     ]
     completion = openai.ChatCompletion.create(
         model="gpt-4o-mini",
@@ -36,30 +38,31 @@ def run_chatgpt_response(user_text: str) -> str:
     )
     return completion.choices[0].message.content.strip()
 
+
 def run_elevenlabs_tts(text: str) -> bytes:
-    # Guard against missing config
-    if not ELEVENLABS_API_KEY or not ELEVENLABS_VOICE_ID:
+    if not (ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID):
         raise ValueError("Missing ElevenLabs API key or voice ID")
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
     headers = {
-        "Accept":       "audio/mpeg",
+        "Accept": "audio/mpeg",
         "Content-Type": "application/json",
-        "xi-api-key":   ELEVENLABS_API_KEY
+        "xi-api-key": ELEVENLABS_API_KEY
     }
     payload = {
-        "text":           text,
+        "text": text,
         "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
     }
     resp = requests.post(url, json=payload, headers=headers)
     resp.raise_for_status()
     return resp.content
 
+
 @app.post("/api/process_audio")
 async def process_audio(
-    audio: UploadFile = File(...),
+    audio: Optional[UploadFile] = File(None),
     ritual_mode: Optional[str] = Form(None)
 ):
-    # 1) Optional ritual shortcut
+    # 1) Ritual shortcut
     if ritual_mode:
         ritual_file = f"rituals/Juno_{ritual_mode.capitalize()}_Mode.m4a"
         if os.path.exists(ritual_file):
@@ -72,18 +75,25 @@ async def process_audio(
             status_code=404
         )
 
-    # 2) Save upload to temp
+    # 2) Must have uploaded audio at this point
+    if audio is None:
+        return JSONResponse(
+            content={"error": "No audio provided"},
+            status_code=400
+        )
+
+    # 3) Save upload to temp
     tmp_dir = "temp"
     os.makedirs(tmp_dir, exist_ok=True)
     file_path = os.path.join(tmp_dir, audio.filename)
     with open(file_path, "wb") as f:
         f.write(await audio.read())
 
-    # 3) Run pipeline: Whisper → GPT → TTS
+    # 4) Run pipeline: Whisper → GPT → TTS
     try:
         transcript = run_whisper_transcription(file_path)
-        reply      = run_chatgpt_response(transcript)
-        tts_bytes  = run_elevenlabs_tts(reply)
+        reply = run_chatgpt_response(transcript)
+        tts_bytes = run_elevenlabs_tts(reply)
     except Exception as e:
         os.remove(file_path)
         return JSONResponse(
@@ -91,18 +101,18 @@ async def process_audio(
             status_code=500
         )
 
-    # 4) Clean up file
+    # 5) Clean up temp file
     os.remove(file_path)
 
-    # 5) Base64-encode the TTS audio
+    # 6) Base64-encode the TTS audio
     b64_str = base64.b64encode(tts_bytes).decode()
 
-    # 6) Return everything
+    # 7) Return everything
     return JSONResponse(
         content={
             "transcript": transcript,
-            "reply":      reply,
-            "tts":        b64_str
+            "reply": reply,
+            "tts": b64_str
         },
         status_code=200
     )
