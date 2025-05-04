@@ -25,8 +25,8 @@ def run_whisper_transcription(file_path: str) -> str:
 
 def run_chatgpt_response(user_text: str) -> str:
     messages = [
-        {"role": "system", "content": "You are Juno, a witty, caring companion."},
-        {"role": "user",   "content": user_text}
+        {"role": "system",  "content": "You are Juno, a witty, caring companion."},
+        {"role": "user",    "content": user_text}
     ]
     completion = openai.ChatCompletion.create(
         model="gpt-4o-mini",
@@ -37,9 +37,9 @@ def run_chatgpt_response(user_text: str) -> str:
 def run_elevenlabs_tts(text: str) -> bytes:
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
     headers = {
-        "Accept":        "audio/mpeg",
-        "Content-Type":  "application/json",
-        "xi-api-key":    ELEVENLABS_API_KEY
+        "Accept":       "audio/mpeg",
+        "Content-Type": "application/json",
+        "xi-api-key":   ELEVENLABS_API_KEY
     }
     payload = {
         "text":           text,
@@ -94,10 +94,6 @@ async def process_audio(
 
     # 6) Return everything
     return JSONResponse(
-        content={
-            "transcript": transcript,
-            "reply":      reply,
-            "tts":        b64_str
-        },
+        content={"transcript": transcript, "reply": reply, "tts": b64_str},
         status_code=200
     )
