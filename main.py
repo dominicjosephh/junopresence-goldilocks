@@ -3,7 +3,9 @@ import os
 import io
 import base64
 from dotenv import load_dotenv
-load_dotenv()  # loads OPENAI_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID
+
+# Load .env variables
+load_dotenv()
 
 import openai
 import requests
@@ -11,7 +13,7 @@ from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.responses import JSONResponse
 from typing import Optional
 
-# Load API keys
+# Load keys from environment
 openai.api_key = os.getenv("OPENAI_API_KEY")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
@@ -25,8 +27,8 @@ def run_whisper_transcription(file_path: str) -> str:
 
 def run_chatgpt_response(user_text: str) -> str:
     messages = [
-        {"role": "system",  "content": "You are Juno, a witty, caring companion."},
-        {"role": "user",    "content": user_text}
+        {"role": "system", "content": "You are Juno, a witty, caring companion."},
+        {"role": "user",   "content": user_text}
     ]
     completion = openai.ChatCompletion.create(
         model="gpt-4o-mini",
@@ -35,6 +37,9 @@ def run_chatgpt_response(user_text: str) -> str:
     return completion.choices[0].message.content.strip()
 
 def run_elevenlabs_tts(text: str) -> bytes:
+    # Guard against missing config
+    if not ELEVENLABS_API_KEY or not ELEVENLABS_VOICE_ID:
+        raise ValueError("Missing ElevenLabs API key or voice ID")
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
     headers = {
         "Accept":       "audio/mpeg",
@@ -54,7 +59,7 @@ async def process_audio(
     audio: UploadFile = File(...),
     ritual_mode: Optional[str] = Form(None)
 ):
-    # 1) Ritual shortcut
+    # 1) Optional ritual shortcut
     if ritual_mode:
         ritual_file = f"rituals/Juno_{ritual_mode.capitalize()}_Mode.m4a"
         if os.path.exists(ritual_file):
@@ -94,6 +99,10 @@ async def process_audio(
 
     # 6) Return everything
     return JSONResponse(
-        content={"transcript": transcript, "reply": reply, "tts": b64_str},
+        content={
+            "transcript": transcript,
+            "reply":      reply,
+            "tts":        b64_str
+        },
         status_code=200
     )
