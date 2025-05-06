@@ -5,8 +5,9 @@ import os
 import tempfile
 from typing import Optional
 import shutil
-
-from openai import OpenAI
+import base64
+import requests
+import openai
 
 app = FastAPI()
 
@@ -41,6 +42,29 @@ def build_system_prompt() -> str:
     else:
         return default_persona
 
+# ElevenLabs TTS
+def generate_tts(text):
+    ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
+    voice_id = os.getenv('JUNO_VOICE_ID')
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    headers = {
+        'xi-api-key': ELEVENLABS_API_KEY,
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        'text': text,
+        'model_id': 'eleven_monolingual_v1',
+        'voice_settings': {
+            'stability': 0.5,
+            'similarity_boost': 0.75
+        }
+    }
+    response = requests.post(url, headers=headers, json=payload)
+    if response.status_code == 200:
+        return response.content
+    else:
+        raise Exception(f"ElevenLabs error: {response.text}")
+
 # Endpoint to process audio (Whisper -> GPT -> TTS)
 @app.post('/api/process_audio')
 async def process_audio(
@@ -55,12 +79,12 @@ async def process_audio(
     tmp.close()
 
     # 1) Transcribe
-    openai = OpenAI()
-    transcript_resp = openai.audio.transcriptions.create(
-        file=open(tmp_path, 'rb'),
-        model='whisper-1'
+    openai.api_key = os.getenv('OPENAI_API_KEY')
+    transcript_resp = openai.Audio.transcribe(
+        model='whisper-1',
+        file=open(tmp_path, 'rb')
     )
-    transcript = transcript_resp.text
+    transcript = transcript_resp['text']
 
     # 2) Build chat messages including memory
     system_msg = build_system_prompt()
@@ -69,29 +93,23 @@ async def process_audio(
         {'role': 'user', 'content': transcript}
     ]
 
-    # 3) If this is a ritual request
+    # 3) Ritual mode handling
     if ritual_mode:
-        # Directly return the ritual file path
-        # Assuming static files served under /static/...
         file_path = f"/static/{ritual_mode}.m4a"
+        os.unlink(tmp_path)
         return {'file': file_path}
 
     # 4) ChatGPT
-    chat_resp = openai.chat.completions.create(
-        model='gpt-4o-mini',
+    chat_resp = openai.ChatCompletion.create(
+        model='gpt-4o',
         temperature=0.7,
         messages=messages
     )
-    reply = chat_resp.choices[0].message.content
+    reply = chat_resp['choices'][0]['message']['content']
 
     # 5) TTS
-    tts_resp = openai.audio.speech.create(
-        file=reply,
-        model_id='eleven_monolingual_v1',
-        voice_id=os.getenv('JUNO_VOICE_ID')
-    )
-    tts_binary = tts_resp.audio
-    tts_b64 = tts_binary.decode('base64')  # pseudo-code
+    tts_binary = generate_tts(reply)
+    tts_b64 = base64.b64encode(tts_binary).decode('utf-8')
 
     # Cleanup temp file
     os.unlink(tmp_path)
