@@ -60,7 +60,30 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
             except Exception:
                 return JSONResponse(content={"reply": "❌ Vault command format error. Use: 'Vault unlock: ItemName, key YourCode'."})
 
-        # 3️⃣ Handle Normal Text Input
+        # 3️⃣ Handle Audio Upload (Voice Transcription)
+        if audio:
+            print("🎙️ Received audio file, starting transcription...")
+            contents = await audio.read()
+            with open('temp_audio.m4a', 'wb') as f:
+                f.write(contents)
+            audio_file = open('temp_audio.m4a', 'rb')
+            transcript = openai.Audio.transcribe("whisper-1", audio_file)
+            print(f"📝 Transcript: {transcript['text']}")
+
+            chat_completion = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": transcript['text']}
+                ]
+            )
+            reply_text = chat_completion.choices[0].message['content']
+            return JSONResponse(content={
+                "transcript": transcript['text'],
+                "reply": reply_text
+            })
+
+        # 4️⃣ Handle Normal Text Input
         if text_input:
             chat_completion = openai.ChatCompletion.create(
                 model="gpt-4",
@@ -75,6 +98,7 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
         return JSONResponse(content={"reply": "❌ No valid input received."})
 
     except Exception as e:
+        print(f"🚨 Error: {str(e)}")
         return JSONResponse(content={"error": str(e)})
 
 if __name__ == "__main__":
