@@ -1,5 +1,7 @@
 import os
 import json
+import base64
+import requests
 from fastapi import FastAPI, UploadFile, Form
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
@@ -9,6 +11,8 @@ import uvicorn
 # Load environment variables
 load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
+ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
+voice_id = "bZV4D3YurjhgEC2jJoal"  # Juno's ElevenLabs Voice ID
 
 # Load memory.json
 with open('memory.json', 'r') as f:
@@ -60,12 +64,13 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
             except Exception:
                 return JSONResponse(content={"reply": "❌ Vault command format error. Use: 'Vault unlock: ItemName, key YourCode'."})
 
-        # 3️⃣ Handle Audio Upload (Voice Transcription)
+        # 3️⃣ Handle Audio Upload (Voice Transcription + TTS)
         if audio:
             print("🎙️ Received audio file, starting transcription...")
             contents = await audio.read()
             with open('temp_audio.m4a', 'wb') as f:
                 f.write(contents)
+
             audio_file = open('temp_audio.m4a', 'rb')
             transcript = openai.Audio.transcribe("whisper-1", audio_file)
             print(f"📝 Transcript: {transcript['text']}")
@@ -78,9 +83,34 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
                 ]
             )
             reply_text = chat_completion.choices[0].message['content']
+
+            # Generate TTS using ElevenLabs
+            tts_resp = requests.post(
+                f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+                headers={
+                    "xi-api-key": ELEVENLABS_API_KEY,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "text": reply_text,
+                    "voice_settings": {
+                        "stability": 0.5,
+                        "similarity_boost": 0.75
+                    }
+                }
+            )
+
+            if tts_resp.status_code == 200:
+                audio_data = tts_resp.content
+                encoded_audio = base64.b64encode(audio_data).decode('utf-8')
+            else:
+                print(f"🚨 ElevenLabs TTS error: {tts_resp.status_code}")
+                encoded_audio = None
+
             return JSONResponse(content={
                 "transcript": transcript['text'],
-                "reply": reply_text
+                "reply": reply_text,
+                "tts": encoded_audio
             })
 
         # 4️⃣ Handle Normal Text Input
