@@ -2,6 +2,7 @@ import os
 import json
 import base64
 import requests
+from datetime import datetime
 from fastapi import FastAPI, UploadFile, Form
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
@@ -15,15 +16,20 @@ ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
 voice_id = "bZV4D3YurjhgEC2jJoal"  # Juno's ElevenLabs Voice ID
 
 # Load memory.json
-with open('memory.json', 'r') as f:
-    MEMORY_DATA = json.load(f)
+def load_memory():
+    with open('memory.json', 'r') as f:
+        return json.load(f)
 
-# Extract memory sections
+def save_memory(memory_data):
+    with open('memory.json', 'w') as f:
+        json.dump(memory_data, f, indent=4)
+
+MEMORY_DATA = load_memory()
 blueprint = MEMORY_DATA.get('blueprint', {})
 rituals = MEMORY_DATA.get('rituals', {})
 chronicle = MEMORY_DATA.get('chronicle', [])
 
-# Prepare memory bullets for system prompt
+# Prepare system prompt
 MEMORY_BULLETS = "\n".join([f"- {entry['event']}" for entry in chronicle])
 
 SYSTEM_PROMPT = f"""
@@ -44,12 +50,15 @@ app = FastAPI()
 @app.post("/api/process_audio")
 async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None), text_input: str = Form(None)):
     try:
-        # 1️⃣ Handle Ritual Mode (Pre-recorded)
+        memory_data = load_memory()
+
+        # 1️⃣ Ritual Mode
         if ritual_mode:
             ritual_response = rituals.get(ritual_mode, f"{ritual_mode.capitalize()} ritual initiated.")
+            log_to_memory("Ritual triggered: " + ritual_mode, "Ritual")
             return JSONResponse(content={"reply": ritual_response})
 
-        # 2️⃣ Handle Vault Unlock
+        # 2️⃣ Vault Unlock
         if text_input and "vault unlock" in text_input.lower():
             try:
                 with open('vault.json', 'r') as vf:
@@ -58,13 +67,14 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
                 item_name, code = item_info.strip().split(", key ")
                 item = vault.get(item_name.strip())
                 if item and item['code'] == code.strip():
+                    log_to_memory(f"Vault access granted for item: {item_name.strip()}", "Vault")
                     return JSONResponse(content={"reply": f"🔒 Vault access granted: {item['content']}"})
                 else:
                     return JSONResponse(content={"reply": "❌ Vault access denied: incorrect code or item not found."})
             except Exception:
                 return JSONResponse(content={"reply": "❌ Vault command format error. Use: 'Vault unlock: ItemName, key YourCode'."})
 
-        # 3️⃣ Handle Audio Upload (Voice Transcription + TTS)
+        # 3️⃣ Audio Upload (Whisper + Chat + TTS)
         if audio:
             print("🎙️ Received audio file, starting transcription...")
             contents = await audio.read()
@@ -75,37 +85,22 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
             transcript = openai.Audio.transcribe("whisper-1", audio_file)
             print(f"📝 Transcript: {transcript['text']}")
 
-            chat_completion = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": transcript['text']}
-                ]
-            )
-            reply_text = chat_completion.choices[0].message['content']
+            reply_text = get_gpt_reply(transcript['text'])
+            mood = detect_mood(transcript['text'])
 
-            # Generate TTS using ElevenLabs
-            tts_resp = requests.post(
-                f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
-                headers={
-                    "xi-api-key": ELEVENLABS_API_KEY,
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "text": reply_text,
-                    "voice_settings": {
-                        "stability": 0.5,
-                        "similarity_boost": 0.75
-                    }
-                }
-            )
+            # Save to memory
+            chronicle_entry = {
+                "event": transcript['text'],
+                "reply": reply_text,
+                "mood": mood,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            memory_data['chronicle'].append(chronicle_entry)
+            save_memory(memory_data)
+            print(f"💾 Saved to memory: {chronicle_entry}")
 
-            if tts_resp.status_code == 200:
-                audio_data = tts_resp.content
-                encoded_audio = base64.b64encode(audio_data).decode('utf-8')
-            else:
-                print(f"🚨 ElevenLabs TTS error: {tts_resp.status_code}")
-                encoded_audio = None
+            # Generate TTS
+            encoded_audio = generate_tts(reply_text)
 
             return JSONResponse(content={
                 "transcript": transcript['text'],
@@ -113,16 +108,22 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
                 "tts": encoded_audio
             })
 
-        # 4️⃣ Handle Normal Text Input
+        # 4️⃣ Text Input (Chat)
         if text_input:
-            chat_completion = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": text_input}
-                ]
-            )
-            reply_text = chat_completion.choices[0].message['content']
+            reply_text = get_gpt_reply(text_input)
+            mood = detect_mood(text_input)
+
+            # Save to memory
+            chronicle_entry = {
+                "event": text_input,
+                "reply": reply_text,
+                "mood": mood,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            memory_data['chronicle'].append(chronicle_entry)
+            save_memory(memory_data)
+            print(f"💾 Saved to memory: {chronicle_entry}")
+
             return JSONResponse(content={"reply": reply_text})
 
         return JSONResponse(content={"reply": "❌ No valid input received."})
@@ -130,6 +131,72 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
     except Exception as e:
         print(f"🚨 Error: {str(e)}")
         return JSONResponse(content={"error": str(e)})
+
+@app.post("/api/clear_memory")
+async def clear_memory():
+    try:
+        memory_data = load_memory()
+        memory_data['chronicle'] = []
+        save_memory(memory_data)
+        print("🧹 Chronicle memory cleared.")
+        return JSONResponse(content={"status": "Memory chronicle cleared."})
+    except Exception as e:
+        print(f"🚨 Error clearing memory: {str(e)}")
+        return JSONResponse(content={"error": str(e)})
+
+# Utility: Generate GPT reply
+def get_gpt_reply(user_text):
+    chat_completion = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_text}
+        ]
+    )
+    return chat_completion.choices[0].message['content']
+
+# Utility: Detect mood tag
+def detect_mood(text):
+    try:
+        mood_prompt = f"What is the mood or tone of this message in one word? '{text}'"
+        resp = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": mood_prompt}]
+        )
+        mood_tag = resp.choices[0].message['content'].strip()
+        print(f"🧠 Mood detected: {mood_tag}")
+        return mood_tag
+    except Exception as e:
+        print(f"🚨 Mood detection failed: {str(e)}")
+        return "Unknown"
+
+# Utility: Generate TTS audio
+def generate_tts(reply_text):
+    try:
+        tts_resp = requests.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+            headers={
+                "xi-api-key": ELEVENLABS_API_KEY,
+                "Content-Type": "application/json"
+            },
+            json={
+                "text": reply_text,
+                "voice_settings": {
+                    "stability": 0.5,
+                    "similarity_boost": 0.75
+                }
+            }
+        )
+        if tts_resp.status_code == 200:
+            audio_data = tts_resp.content
+            encoded_audio = base64.b64encode(audio_data).decode('utf-8')
+            return encoded_audio
+        else:
+            print(f"🚨 ElevenLabs error: {tts_resp.status_code}")
+            return None
+    except Exception as e:
+        print(f"🚨 ElevenLabs TTS error: {str(e)}")
+        return None
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=5000)
