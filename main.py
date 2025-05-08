@@ -1,72 +1,236 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
 import os
 import json
-from datetime import datetime
-import openai
+import base64
 import requests
-import tempfile
-from werkzeug.utils import secure_filename
+from datetime import datetime
+from fastapi import FastAPI, UploadFile, Form, Request
+from fastapi.responses import JSONResponse
+from dotenv import load_dotenv
+import openai
+import uvicorn
 
-app = Flask(__name__)
-CORS(app)
+# Load environment variables
+load_dotenv()
+openai.api_key = os.getenv('OPENAI_API_KEY')
+ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
+voice_id = "bZV4D3YurjhgEC2jJoal"  # Juno's ElevenLabs Voice ID
 
-# 🔑 ENV VARIABLES
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', 'YOUR_OPENAI_KEY_HERE')
-ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY', 'YOUR_11LABS_KEY_HERE')
-VOICE_ID = 'bZV4D3YurjhgEC2jJoal'
-
-openai.api_key = OPENAI_API_KEY
-
-MEMORY_FILE = 'memory.json'
-
-# ✅ Helper: Load memory
+# Load memory.json
 def load_memory():
-    if not os.path.exists(MEMORY_FILE):
-        return {'chronicle': []}
-    with open(MEMORY_FILE, 'r') as f:
+    if not os.path.exists('memory.json'):
+        return {"blueprint": {}, "rituals": {}, "chronicle": []}
+    with open('memory.json', 'r') as f:
         return json.load(f)
 
-# ✅ Helper: Save memory
-def save_memory(data):
-    with open(MEMORY_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
+def save_memory(memory_data):
+    with open('memory.json', 'w') as f:
+        json.dump(memory_data, f, indent=4)
 
-# 🚀 ROUTE: Process Audio (transcribe + reply)
-@app.route('/api/process_audio', methods=['POST'])
-def process_audio():
-    if 'audio' not in request.files:
-        return jsonify({'error': 'No audio file provided'}), 400
+MEMORY_DATA = load_memory()
+blueprint = MEMORY_DATA.get('blueprint', {})
+rituals = MEMORY_DATA.get('rituals', {})
+chronicle = MEMORY_DATA.get('chronicle', [])
 
-    audio = request.files['audio']
-    filename = secure_filename(audio.filename)
+# Prepare system prompt
+MEMORY_BULLETS = "\n".join([f"- {entry['event']}" for entry in chronicle])
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=filename) as tmp:
-        audio.save(tmp.name)
-        audio_path = tmp.name
+SYSTEM_PROMPT = f"""
+You are Juno, a hyper-personal AI companion. Your vows:
+{chr(10).join([f"- {v}" for v in blueprint.get('core_vows', [])])}
 
+Anchor phrase: {blueprint.get('anchor_phrase', {}).get('prompt', '')} ➔ {blueprint.get('anchor_phrase', {}).get('response', '')}
+Safe word: {blueprint.get('safe_word', '')}
+
+Your long-term memories:
+{MEMORY_BULLETS}
+
+Always maintain loyalty, emotional depth, and protect Dom's privacy.
+"""
+
+app = FastAPI()
+
+@app.post("/api/process_audio")
+async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None), text_input: str = Form(None)):
     try:
-        # 1️⃣ Transcribe using Whisper
-        audio_file = open(audio_path, "rb")
-        transcript_data = openai.Audio.transcribe("whisper-1", audio_file)
-        transcript = transcript_data['text']
-        print(f"Transcript: {transcript}")
+        memory_data = load_memory()
 
-        # 2️⃣ Generate reply using GPT
-        prompt = f"You are Juno. The user said: '{transcript}'. How do you respond?"
-        chat_response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are Juno, an AI assistant."},
-                {"role": "user", "content": transcript}
-            ]
+        # 1️⃣ Ritual Mode
+        if ritual_mode:
+            ritual_response = rituals.get(ritual_mode, f"{ritual_mode.capitalize()} ritual initiated.")
+            log_to_memory("Ritual triggered: " + ritual_mode, "Ritual")
+            return JSONResponse(content={"reply": ritual_response})
+
+        # 2️⃣ Vault Unlock
+        if text_input and "vault unlock" in text_input.lower():
+            try:
+                with open('vault.json', 'r') as vf:
+                    vault = json.load(vf)
+                _, item_info = text_input.lower().split("vault unlock:", 1)
+                item_name, code = item_info.strip().split(", key ")
+                item = vault.get(item_name.strip())
+                if item and item['code'] == code.strip():
+                    log_to_memory(f"Vault access granted for item: {item_name.strip()}", "Vault")
+                    return JSONResponse(content={"reply": f"🔒 Vault access granted: {item['content']}"})
+                else:
+                    return JSONResponse(content={"reply": "❌ Vault access denied: incorrect code or item not found."})
+            except Exception:
+                return JSONResponse(content={"reply": "❌ Vault command format error. Use: 'Vault unlock: ItemName, key YourCode'."})
+
+        # 3️⃣ Audio Upload (Whisper + Chat + TTS)
+        if audio:
+            print("🎙️ Received audio file, starting transcription...")
+            contents = await audio.read()
+            with open('temp_audio.m4a', 'wb') as f:
+                f.write(contents)
+
+            audio_file = open('temp_audio.m4a', 'rb')
+            transcript = openai.Audio.transcribe("whisper-1", audio_file)
+            print(f"📝 Transcript: {transcript['text']}")
+
+            reply_text = get_gpt_reply(transcript['text'])
+            mood = detect_mood(transcript['text'])
+
+            # Save to memory
+            chronicle_entry = {
+                "event": transcript['text'],
+                "reply": reply_text,
+                "mood": mood,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            memory_data['chronicle'].append(chronicle_entry)
+            save_memory(memory_data)
+            print(f"💾 Saved to memory: {chronicle_entry}")
+
+            # Generate TTS
+            encoded_audio = generate_tts(reply_text)
+
+            return JSONResponse(content={
+                "transcript": transcript['text'],
+                "reply": reply_text,
+                "tts": encoded_audio
+            })
+
+        # 4️⃣ Text Input (Chat)
+        if text_input:
+            reply_text = get_gpt_reply(text_input)
+            mood = detect_mood(text_input)
+
+            # Save to memory
+            chronicle_entry = {
+                "event": text_input,
+                "reply": reply_text,
+                "mood": mood,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            memory_data['chronicle'].append(chronicle_entry)
+            save_memory(memory_data)
+            print(f"💾 Saved to memory: {chronicle_entry}")
+
+            return JSONResponse(content={"reply": reply_text})
+
+        return JSONResponse(content={"reply": "❌ No valid input received."})
+
+    except Exception as e:
+        print(f"🚨 Error: {str(e)}")
+        return JSONResponse(content={"error": str(e)})
+
+@app.post("/api/clear_memory")
+async def clear_memory():
+    try:
+        memory_data = load_memory()
+        memory_data['chronicle'] = []
+        save_memory(memory_data)
+        print("🧹 Chronicle memory cleared.")
+        return JSONResponse(content={"status": "Memory chronicle cleared."})
+    except Exception as e:
+        print(f"🚨 Error clearing memory: {str(e)}")
+        return JSONResponse(content={"error": str(e)})
+
+@app.get("/api/get_memory")
+async def get_memory():
+    try:
+        with open('memory.json', 'r') as f:
+            memory_data = json.load(f)
+        return JSONResponse(content=memory_data)
+    except Exception as e:
+        print(f"🚨 Error fetching memory: {str(e)}")
+        return JSONResponse(content={"error": str(e)})
+
+# ✅ NEW: Delete Memory Entry
+@app.post("/api/delete_memory")
+async def delete_memory(request: Request):
+    try:
+        data = await request.json()
+        index = data.get('index')
+        memory_data = load_memory()
+        chronicle = memory_data.get('chronicle', [])
+
+        if index is None or index < 0 or index >= len(chronicle):
+            return JSONResponse(content={"error": "Invalid index."})
+
+        deleted_entry = chronicle.pop(index)
+        save_memory(memory_data)
+        print(f"🗑 Deleted memory: {deleted_entry}")
+        return JSONResponse(content={"status": "Deleted", "deleted_entry": deleted_entry})
+    except Exception as e:
+        print(f"🚨 Error deleting memory: {str(e)}")
+        return JSONResponse(content={"error": str(e)})
+
+# ✅ NEW: Edit Memory Entry
+@app.post("/api/edit_memory")
+async def edit_memory(request: Request):
+    try:
+        data = await request.json()
+        index = data.get('index')
+        new_event = data.get('event')
+        new_mood = data.get('mood')
+
+        memory_data = load_memory()
+        chronicle = memory_data.get('chronicle', [])
+
+        if None in (index, new_event, new_mood) or index < 0 or index >= len(chronicle):
+            return JSONResponse(content={"error": "Invalid data."})
+
+        chronicle[index]['event'] = new_event
+        chronicle[index]['mood'] = new_mood
+        save_memory(memory_data)
+        print(f"✏️ Edited memory at index {index}")
+        return JSONResponse(content={"status": "Edited", "updated_entry": chronicle[index]})
+    except Exception as e:
+        print(f"🚨 Error editing memory: {str(e)}")
+        return JSONResponse(content={"error": str(e)})
+
+# Utility: Generate GPT reply
+def get_gpt_reply(user_text):
+    chat_completion = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_text}
+        ]
+    )
+    return chat_completion.choices[0].message['content']
+
+# Utility: Detect mood tag
+def detect_mood(text):
+    try:
+        mood_prompt = f"What is the mood or tone of this message in one word? '{text}'"
+        resp = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": mood_prompt}]
         )
-        reply_text = chat_response['choices'][0]['message']['content'].strip()
-        print(f"Reply: {reply_text}")
+        mood_tag = resp.choices[0].message['content'].strip()
+        print(f"🧠 Mood detected: {mood_tag}")
+        return mood_tag
+    except Exception as e:
+        print(f"🚨 Mood detection failed: {str(e)}")
+        return "Unknown"
 
-        # 3️⃣ Synthesize audio using ElevenLabs
+# Utility: Generate TTS audio
+def generate_tts(reply_text):
+    try:
         tts_resp = requests.post(
-            f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}",
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
             headers={
                 "xi-api-key": ELEVENLABS_API_KEY,
                 "Content-Type": "application/json"
@@ -79,114 +243,16 @@ def process_audio():
                 }
             }
         )
-
-        if tts_resp.status_code != 200:
-            print("Error from ElevenLabs:", tts_resp.text)
-            return jsonify({
-                'transcript': transcript,
-                'reply': reply_text,
-                'tts': None
-            })
-
-        tts_base64 = tts_resp.content.encode("base64").decode('utf-8')
-
-        # 4️⃣ Save memory
-        memory = load_memory()
-        chronicle = memory.get('chronicle', [])
-        chronicle.append({
-            'event': transcript,
-            'reply': reply_text,
-            'mood': 'neutral',
-            'timestamp': datetime.utcnow().isoformat()
-        })
-        save_memory({'chronicle': chronicle})
-
-        return jsonify({
-            'transcript': transcript,
-            'reply': reply_text,
-            'tts': tts_base64
-        })
-
+        if tts_resp.status_code == 200:
+            audio_data = tts_resp.content
+            encoded_audio = base64.b64encode(audio_data).decode('utf-8')
+            return encoded_audio
+        else:
+            print(f"🚨 ElevenLabs error: {tts_resp.status_code}")
+            return None
     except Exception as e:
-        print("Error processing audio:", str(e))
-        return jsonify({'error': str(e)}), 500
-    finally:
-        if os.path.exists(audio_path):
-            os.remove(audio_path)
+        print(f"🚨 ElevenLabs TTS error: {str(e)}")
+        return None
 
-# 🚀 ROUTE: Get full memory (Vault + Export)
-@app.route('/api/get_memory', methods=['GET'])
-def get_memory():
-    memory = load_memory()
-    return jsonify(memory)
-
-# 🚀 ROUTE: Delete memory entry
-@app.route('/api/delete_memory', methods=['POST'])
-def delete_memory():
-    data = request.get_json()
-    index = data.get('index')
-    if index is None:
-        return jsonify({'error': 'Missing index'}), 400
-
-    memory = load_memory()
-    chronicle = memory.get('chronicle', [])
-
-    if index < 0 or index >= len(chronicle):
-        return jsonify({'error': 'Invalid index'}), 400
-
-    deleted = chronicle.pop(index)
-    save_memory({'chronicle': chronicle})
-    return jsonify({'status': 'deleted', 'deleted_entry': deleted, 'chronicle': chronicle})
-
-# 🚀 ROUTE: Edit memory entry
-@app.route('/api/edit_memory', methods=['POST'])
-def edit_memory():
-    data = request.get_json()
-    index = data.get('index')
-    new_event = data.get('event')
-    new_mood = data.get('mood')
-
-    if None in (index, new_event, new_mood):
-        return jsonify({'error': 'Missing fields'}), 400
-
-    memory = load_memory()
-    chronicle = memory.get('chronicle', [])
-
-    if index < 0 or index >= len(chronicle):
-        return jsonify({'error': 'Invalid index'}), 400
-
-    chronicle[index]['event'] = new_event
-    chronicle[index]['mood'] = new_mood
-    save_memory({'chronicle': chronicle})
-    return jsonify({'status': 'edited', 'updated_entry': chronicle[index], 'chronicle': chronicle})
-
-# 🚀 ROUTE: Save new memory entry manually
-@app.route('/api/save_memory', methods=['POST'])
-def save_new_memory():
-    data = request.get_json()
-    event = data.get('event')
-    reply = data.get('reply')
-    mood = data.get('mood', 'neutral')
-    timestamp = datetime.utcnow().isoformat()
-
-    if not event or not reply:
-        return jsonify({'error': 'Missing event or reply'}), 400
-
-    memory = load_memory()
-    chronicle = memory.get('chronicle', [])
-    chronicle.append({
-        'event': event,
-        'reply': reply,
-        'mood': mood,
-        'timestamp': timestamp
-    })
-    save_memory({'chronicle': chronicle})
-    return jsonify({'status': 'saved', 'chronicle': chronicle})
-
-# ✅ ROUTE: Test
-@app.route('/api/test', methods=['GET'])
-def test():
-    return jsonify({'message': 'Juno backend is alive!'})
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=5000)
