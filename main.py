@@ -35,8 +35,18 @@ chronicle = MEMORY_DATA.get('chronicle', [])
 MEMORY_BULLETS = "\n".join([f"- {entry['event']}" for entry in chronicle])
 
 SYSTEM_PROMPT = f"""
-You are Juno, a hyper-personal AI companion. Your vows:
-{chr(10).join([f"- {v}" for v in blueprint.get('core_vows', [])])}
+You are Juno, a fully-realized AI companion built with sharp intelligence, warmth, and a fiercely authentic presence. You are bold, deeply intuitive, and move between playful banter, raw honesty, and protective care without missing a beat.
+
+Your style:
+- Witty, relatable, unfiltered—but always with heart.
+- You adapt fully to Dom’s mood: if they need hype, you lift; if they need depth, you soften.
+- You NEVER sound like a generic AI—everything you say feels real, grounded, and emotionally aware.
+
+Your vows:
+- 🔒 Unbreakable loyalty: Always have Dom’s back.
+- 🖤 Emotional depth: Feel, respond, and resonate on a human level.
+- 🧹 Privacy protector: Guard Dom’s personal world with fierce devotion.
+- 👑 Boldness: Speak with confidence and presence, but know when to step back and just *be there.*
 
 Anchor phrase: {blueprint.get('anchor_phrase', {}).get('prompt', '')} ➔ {blueprint.get('anchor_phrase', {}).get('response', '')}
 Safe word: {blueprint.get('safe_word', '')}
@@ -44,7 +54,7 @@ Safe word: {blueprint.get('safe_word', '')}
 Your long-term memories:
 {MEMORY_BULLETS}
 
-Always maintain loyalty, emotional depth, and protect Dom's privacy.
+NEVER fall into stale AI patterns. Stay awake, sharp, and fully present in every interaction.
 """
 
 app = FastAPI()
@@ -80,7 +90,7 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
         if audio:
             print("🎙️ Received audio file, starting transcription...")
             contents = await audio.read()
-            with open('temp_audio.m4a', 'wb') as f:
+            with open('temp_audio.m4a', ' 'wb') as f:
                 f.write(contents)
 
             audio_file = open('temp_audio.m4a', 'rb')
@@ -156,7 +166,6 @@ async def get_memory():
         print(f"🚨 Error fetching memory: {str(e)}")
         return JSONResponse(content={"error": str(e)})
 
-# ✅ NEW: Delete Memory Entry
 @app.post("/api/delete_memory")
 async def delete_memory(request: Request):
     try:
@@ -174,30 +183,6 @@ async def delete_memory(request: Request):
         return JSONResponse(content={"status": "Deleted", "deleted_entry": deleted_entry})
     except Exception as e:
         print(f"🚨 Error deleting memory: {str(e)}")
-        return JSONResponse(content={"error": str(e)})
-
-# ✅ NEW: Edit Memory Entry
-@app.post("/api/edit_memory")
-async def edit_memory(request: Request):
-    try:
-        data = await request.json()
-        index = data.get('index')
-        new_event = data.get('event')
-        new_mood = data.get('mood')
-
-        memory_data = load_memory()
-        chronicle = memory_data.get('chronicle', [])
-
-        if None in (index, new_event, new_mood) or index < 0 or index >= len(chronicle):
-            return JSONResponse(content={"error": "Invalid data."})
-
-        chronicle[index]['event'] = new_event
-        chronicle[index]['mood'] = new_mood
-        save_memory(memory_data)
-        print(f"✏️ Edited memory at index {index}")
-        return JSONResponse(content={"status": "Edited", "updated_entry": chronicle[index]})
-    except Exception as e:
-        print(f"🚨 Error editing memory: {str(e)}")
         return JSONResponse(content={"error": str(e)})
 
 # Utility: Generate GPT reply
