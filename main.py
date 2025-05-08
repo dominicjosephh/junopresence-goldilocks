@@ -78,7 +78,7 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
         if audio:
             print("🎙️ Received audio file, starting transcription...")
             contents = await audio.read()
-            with open('temp_audio.m4a', 'wb') as f:
+            with open('temp_audio.m4a', ' 'wb') as f:
                 f.write(contents)
 
             audio_file = open('temp_audio.m4a', 'rb')
@@ -142,6 +142,17 @@ async def clear_memory():
         return JSONResponse(content={"status": "Memory chronicle cleared."})
     except Exception as e:
         print(f"🚨 Error clearing memory: {str(e)}")
+        return JSONResponse(content={"error": str(e)})
+
+# ✅ NEW: Get Memory Route
+@app.get("/api/get_memory")
+async def get_memory():
+    try:
+        with open('memory.json', 'r') as f:
+            memory_data = json.load(f)
+        return JSONResponse(content=memory_data)
+    except Exception as e:
+        print(f"🚨 Error fetching memory: {str(e)}")
         return JSONResponse(content={"error": str(e)})
 
 # Utility: Generate GPT reply
