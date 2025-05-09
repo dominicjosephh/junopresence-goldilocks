@@ -96,7 +96,7 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
         if audio:
             print("🎙️ Received audio file, starting transcription...")
             contents = await audio.read()
-            with open('temp_audio.m4a', ' 'wb') as f:
+            with open('temp_audio.m4a', 'wb') as f:  # ✅ FIXED HERE (no stray space)
                 f.write(contents)
 
             audio_file = open('temp_audio.m4a', 'rb')
