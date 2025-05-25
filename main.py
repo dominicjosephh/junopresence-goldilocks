@@ -3,7 +3,7 @@ import json
 import base64
 import requests
 from datetime import datetime
-from fastapi import FastAPI, UploadFile, Form
+from fastapi import FastAPI, UploadFile, Form, Request
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import openai
@@ -15,7 +15,7 @@ import uvicorn
 load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
-voice_id = "bZV4D3YurjhgEC2jJoal"  # Your ElevenLabs Voice ID
+voice_id = "bZV4D3YurjhgEC2jJoal"  # Juno's ElevenLabs Voice ID
 
 # Load memory.json
 def load_memory():
@@ -68,6 +68,16 @@ app = FastAPI()
 async def test():
     return {"message": "Backend is live"}
 
+@app.get("/api/conversation_history")
+async def conversation_history():
+    try:
+        memory_data = load_memory()
+        # Only show the last 20 entries
+        history = memory_data.get('chronicle', [])[-20:]
+        return JSONResponse(content={"history": history})
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
 @app.post("/api/process_audio")
 async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None), text_input: str = Form(None)):
     try:
@@ -119,14 +129,12 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
             save_memory(memory_data)
             print(f"💾 Saved to memory: {chronicle_entry}")
 
-            encoded_audio = generate_tts(reply_text, mood)
-            if not encoded_audio:
-                print("❌ ElevenLabs TTS failed or returned nothing!")
+            encoded_audio = generate_tts(reply_text)
 
             return JSONResponse(content={
                 "transcript": transcript['text'],
                 "reply": reply_text,
-                "tts": encoded_audio if encoded_audio else None
+                "tts": encoded_audio
             })
 
         # Text Input (Chat)
@@ -150,7 +158,7 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
 
     except Exception as e:
         print(f"💥 Error: {str(e)}")
-        return JSONResponse(content={"error": str(e), "tts": None})
+        return JSONResponse(content={"error": str(e)})
 
 def get_gpt_reply(user_text):
     chat_completion = openai.ChatCompletion.create(
@@ -174,9 +182,9 @@ def detect_mood(text):
         return mood_tag
     except Exception as e:
         print(f"💥 Mood detection failed: {str(e)}")
-        return "neutral"
+        return "Unknown"
 
-def generate_tts(reply_text, mood="neutral"):
+def generate_tts(reply_text):
     try:
         tts_resp = requests.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
@@ -186,7 +194,6 @@ def generate_tts(reply_text, mood="neutral"):
             },
             json={
                 "text": reply_text,
-                # Optionally pass mood/style if ElevenLabs supports it for your voice
                 "voice_settings": {
                     "stability": 0.5,
                     "similarity_boost": 0.75
@@ -204,19 +211,17 @@ def generate_tts(reply_text, mood="neutral"):
         print(f"💥 ElevenLabs TTS error: {str(e)}")
         return None
 
-def log_to_memory(event, tag="System"):
-    try:
-        memory_data = load_memory()
-        entry = {
-            "event": event,
-            "tag": tag,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        memory_data['chronicle'].append(entry)
-        save_memory(memory_data)
-        print(f"📝 Log: {entry}")
-    except Exception as e:
-        print(f"💥 Memory log error: {str(e)}")
+# Optionally, a log_to_memory function for rituals/vault, etc.
+def log_to_memory(event, event_type):
+    memory_data = load_memory()
+    entry = {
+        "event": event,
+        "reply": "",
+        "mood": event_type,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    memory_data['chronicle'].append(entry)
+    save_memory(memory_data)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=5000)
