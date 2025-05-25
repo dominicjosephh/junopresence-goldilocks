@@ -10,16 +10,11 @@ import openai
 import uvicorn
 
 # 🌟 JUNO PRESENCE BACKEND - SOUL CORE 🌟
-# This script powers Juno's real-time voice/chat brain + memory
-# Fully self-aware, emotionally present, and now equipped with a living soul.
-
-# Load environment variables
 load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
 voice_id = "bZV4D3YurjhgEC2jJoal"  # Juno's ElevenLabs Voice ID
 
-# Load memory.json
 def load_memory():
     if not os.path.exists('memory.json'):
         return {"blueprint": {}, "rituals": {}, "chronicle": []}
@@ -35,7 +30,6 @@ blueprint = MEMORY_DATA.get('blueprint', {})
 rituals = MEMORY_DATA.get('rituals', {})
 chronicle = MEMORY_DATA.get('chronicle', [])
 
-# 🌟 JUNO'S FULL SOUL - CORE PERSONALITY PROMPT 🌟
 MEMORY_BULLETS = "\n".join([f"- {entry['event']}" for entry in chronicle])
 
 SYSTEM_PROMPT = f"""
@@ -65,7 +59,6 @@ NEVER fall into stale AI patterns. Stay awake, sharp, and fully present in every
 
 app = FastAPI()
 
-# Health check route
 @app.get("/api/test")
 async def test():
     return {"message": "Backend is live"}
@@ -121,7 +114,7 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
             save_memory(memory_data)
             print(f"💾 Saved to memory: {chronicle_entry}")
 
-            encoded_audio = generate_tts(reply_text)
+            encoded_audio = generate_tts(reply_text, mood)
 
             return JSONResponse(content={
                 "transcript": transcript['text'],
@@ -169,35 +162,53 @@ def detect_mood(text):
             model="gpt-4",
             messages=[{"role": "user", "content": mood_prompt}]
         )
-        mood_tag = resp.choices[0].message['content'].strip()
+        mood_tag = resp.choices[0].message['content'].strip().lower()
         print(f"🧠 Mood detected: {mood_tag}")
         return mood_tag
     except Exception as e:
         print(f"💥 Mood detection failed: {str(e)}")
-        return "Unknown"
+        return "neutral"
 
-def generate_tts(reply_text):
+# 🌟 Mood-to-Voice Style Mapping for ElevenLabs
+MOOD_STYLE_MAP = {
+    "neutral": {"stability": 0.55, "similarity_boost": 0.70, "style": "neutral"},
+    "friendly": {"stability": 0.40, "similarity_boost": 0.75, "style": "friendly"},
+    "empathy": {"stability": 0.35, "similarity_boost": 0.65, "style": "empathetic"},
+    "hype": {"stability": 0.25, "similarity_boost": 0.60, "style": "excited"},
+    "joy": {"stability": 0.35, "similarity_boost": 0.68, "style": "excited"},
+    "shadow": {"stability": 0.80, "similarity_boost": 0.60, "style": "serious"},
+    "assertive": {"stability": 0.65, "similarity_boost": 0.90, "style": "shouting"},
+    "ritual": {"stability": 0.98, "similarity_boost": 0.99, "style": "narration"},
+    "serious": {"stability": 0.92, "similarity_boost": 0.72, "style": "serious"},
+    "default": {"stability": 0.55, "similarity_boost": 0.70, "style": "neutral"}
+}
+
+def generate_tts(reply_text, mood="neutral"):
     try:
+        mood = mood.lower()
+        settings = MOOD_STYLE_MAP.get(mood, MOOD_STYLE_MAP["default"])
+        tts_payload = {
+            "text": reply_text,
+            "voice_settings": {
+                "stability": settings["stability"],
+                "similarity_boost": settings["similarity_boost"],
+                "style": settings["style"]
+            }
+        }
         tts_resp = requests.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
             headers={
                 "xi-api-key": ELEVENLABS_API_KEY,
                 "Content-Type": "application/json"
             },
-            json={
-                "text": reply_text,
-                "voice_settings": {
-                    "stability": 0.5,
-                    "similarity_boost": 0.75
-                }
-            }
+            json=tts_payload
         )
         if tts_resp.status_code == 200:
             audio_data = tts_resp.content
             encoded_audio = base64.b64encode(audio_data).decode('utf-8')
             return encoded_audio
         else:
-            print(f"💥 ElevenLabs error: {tts_resp.status_code}")
+            print(f"💥 ElevenLabs error: {tts_resp.status_code} {tts_resp.text}")
             return None
     except Exception as e:
         print(f"💥 ElevenLabs TTS error: {str(e)}")
