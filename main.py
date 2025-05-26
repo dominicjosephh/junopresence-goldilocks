@@ -8,13 +8,14 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import openai
 import uvicorn
+import pprint
 
 # 🌟 JUNO PRESENCE BACKEND - SOUL CORE 🌟
 
 load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
-voice_id = "bZV4D3YurjhgEC2jJoal"  # Replace with your actual ElevenLabs voice_id
+voice_id = os.getenv('ELEVENLABS_VOICE_ID')  # Now loaded from .env
 
 MEMORY_FILE = 'memory.json'
 VAULT_FILE = 'vault.json'
@@ -44,17 +45,25 @@ app = FastAPI()
 
 @app.get("/api/test")
 async def test():
-    return {"message": "Backend is live"}
+    response_content = {"message": "Backend is live"}
+    print("Returning JSON (GET /api/test):")
+    pprint.pprint(response_content)
+    return JSONResponse(content=response_content, media_type="application/json")
 
 @app.get("/api/conversation_history")
 async def conversation_history():
     try:
         memory_data = load_memory()
         history = memory_data.get('chronicle', [])[-20:]
-        return JSONResponse(content={"history": history})
+        response_content = {"history": history}
+        print("Returning JSON (GET /api/conversation_history):")
+        pprint.pprint(response_content)
+        return JSONResponse(content=response_content, media_type="application/json")
     except Exception as e:
-        print(f"Error fetching conversation history: {e}")
-        return JSONResponse(content={"error": str(e), "tts": ""}, status_code=500)
+        response_content = {"error": str(e), "tts": ""}
+        print("Returning JSON (error /api/conversation_history):")
+        pprint.pprint(response_content)
+        return JSONResponse(content=response_content, media_type="application/json", status_code=500)
 
 @app.post("/api/process_audio")
 async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None), text_input: str = Form(None)):
@@ -65,14 +74,19 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
         if ritual_mode:
             ritual_response = rituals.get(ritual_mode, f"{ritual_mode.capitalize()} ritual initiated.")
             log_to_memory("Ritual triggered: " + ritual_mode, "Ritual")
-            print(f"[RITUAL] Mode: {ritual_mode}, Reply: {ritual_response}")
-            return JSONResponse(content={"reply": ritual_response, "tts": ""})
+            response_content = {"reply": ritual_response, "tts": ""}
+            print("Returning JSON (ritual_mode):")
+            pprint.pprint(response_content)
+            return JSONResponse(content=response_content, media_type="application/json")
 
         # Vault logic branch
         if text_input and "vault unlock" in text_input.lower():
             try:
                 if not os.path.exists(VAULT_FILE):
-                    return JSONResponse(content={"reply": "❌ Vault is empty or missing.", "tts": ""})
+                    response_content = {"reply": "❌ Vault is empty or missing.", "tts": ""}
+                    print("Returning JSON (vault empty):")
+                    pprint.pprint(response_content)
+                    return JSONResponse(content=response_content, media_type="application/json")
                 with open(VAULT_FILE, 'r') as vf:
                     vault = json.load(vf)
                 _, item_info = text_input.lower().split("vault unlock:", 1)
@@ -80,12 +94,20 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
                 item = vault.get(item_name.strip())
                 if item and item.get('code') == code.strip():
                     log_to_memory(f"Vault access granted for item: {item_name}", "Vault")
-                    return JSONResponse(content={"reply": f"🔒 Vault access granted: {item['content']}", "tts": ""})
+                    response_content = {"reply": f"🔒 Vault access granted: {item['content']}", "tts": ""}
+                    print("Returning JSON (vault granted):")
+                    pprint.pprint(response_content)
+                    return JSONResponse(content=response_content, media_type="application/json")
                 else:
-                    return JSONResponse(content={"reply": "❌ Vault access denied.", "tts": ""})
+                    response_content = {"reply": "❌ Vault access denied.", "tts": ""}
+                    print("Returning JSON (vault denied):")
+                    pprint.pprint(response_content)
+                    return JSONResponse(content=response_content, media_type="application/json")
             except Exception as e:
-                print(f"Vault command error: {e}")
-                return JSONResponse(content={"reply": "❌ Vault command format error.", "tts": ""})
+                response_content = {"reply": "❌ Vault command format error.", "tts": ""}
+                print("Returning JSON (vault format error):")
+                pprint.pprint(response_content)
+                return JSONResponse(content=response_content, media_type="application/json")
 
         # Audio or Text Input branch
         if audio:
@@ -97,15 +119,19 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
                 try:
                     transcript = openai.Audio.transcribe("whisper-1", audio_file, timeout=30)
                 except Exception as e:
-                    print(f"Transcription error: {e}")
-                    return JSONResponse(content={"error": "❌ Whisper transcription failed.", "tts": ""})
+                    response_content = {"error": "❌ Whisper transcription failed.", "tts": ""}
+                    print("Returning JSON (whisper error):")
+                    pprint.pprint(response_content)
+                    return JSONResponse(content=response_content, media_type="application/json")
             print(f"📝 Transcript: {transcript['text']}")
             user_text = transcript['text']
         elif text_input:
             user_text = text_input
         else:
-            print("[ERROR] No valid input received.")
-            return JSONResponse(content={"reply": "❌ No valid input received.", "tts": ""})
+            response_content = {"reply": "❌ No valid input received.", "tts": ""}
+            print("Returning JSON (no input):")
+            pprint.pprint(response_content)
+            return JSONResponse(content=response_content, media_type="application/json")
 
         # Generate GPT-4 reply (not streamed)
         messages = build_chat_messages(user_text)
@@ -117,29 +143,37 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
             )
             full_reply = chat_resp.choices[0].message['content'].strip()
         except Exception as e:
-            print(f"OpenAI chat error: {e}")
-            return JSONResponse(content={"error": "❌ GPT-4 chat failed.", "tts": ""})
+            response_content = {"error": "❌ GPT-4 chat failed.", "tts": ""}
+            print("Returning JSON (gpt-4 error):")
+            pprint.pprint(response_content)
+            return JSONResponse(content=response_content, media_type="application/json")
 
         # Generate TTS for reply
         tts_encoded = generate_tts(full_reply)
         if not tts_encoded:
-            print("❌ No TTS audio returned for this response.")
-            return JSONResponse(content={"error": "❌ TTS generation failed.", "tts": ""})
+            response_content = {"error": "❌ TTS generation failed.", "tts": ""}
+            print("Returning JSON (TTS fail):")
+            pprint.pprint(response_content)
+            return JSONResponse(content=response_content, media_type="application/json")
 
         mood = detect_mood(full_reply)
         log_to_memory(user_text, mood, reply=full_reply)
         update_session_memory(user_text, full_reply, mood)
 
-        print(f"[SUCCESS] Reply generated. Length: {len(full_reply)} | TTS audio present.")
-        return JSONResponse(content={
+        response_content = {
             "tts": tts_encoded,
             "reply": full_reply,
             "mood": mood
-        })
+        }
+        print("Returning JSON (success):")
+        pprint.pprint(response_content)
+        return JSONResponse(content=response_content, media_type="application/json")
 
     except Exception as e:
-        print(f"Processing error: {e}")
-        return JSONResponse(content={"error": str(e), "tts": ""})
+        response_content = {"error": str(e), "tts": ""}
+        print("Returning JSON (general exception):")
+        pprint.pprint(response_content)
+        return JSONResponse(content=response_content, media_type="application/json")
 
 def split_into_sentences(text):
     import re
@@ -172,9 +206,8 @@ def generate_tts(reply_text):
             "xi-api-key": ELEVENLABS_API_KEY,
             "Content-Type": "application/json"
         }
-        resp = requests.post(url, headers=headers, json=payload, timeout=30)
+        resp = requests.post(url, headers=headers, json=payload, timeout=15)
         print("TTS resp status:", resp.status_code)
-        print("TTS resp text:", resp.text[:300])
         if resp.status_code == 200:
             print("✅ ElevenLabs TTS call succeeded.")
             return base64.b64encode(resp.content).decode('utf-8')
