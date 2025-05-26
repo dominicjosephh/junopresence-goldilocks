@@ -14,7 +14,7 @@ import uvicorn
 load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
-voice_id = "bZV4D3YurjhgEC2jJoal"
+voice_id = "bZV4D3YurjhgEC2jJoal"  # Change to your ElevenLabs voice id
 
 MEMORY_FILE = 'memory.json'
 VAULT_FILE = 'vault.json'
@@ -120,6 +120,7 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
         # Generate TTS for reply
         tts_encoded = generate_tts(full_reply)
         if not tts_encoded:
+            print("❌ No TTS audio returned for this response.")
             return JSONResponse(content={"error": "❌ TTS generation failed."})
 
         mood = detect_mood(full_reply)
@@ -154,19 +155,28 @@ def detect_mood(text):
 
 def generate_tts(reply_text):
     try:
-        tts_resp = requests.post(
-            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
-            headers={"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"},
-            json={"text": reply_text, "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}},
-            timeout=30
-        )
-        if tts_resp.status_code == 200:
-            return base64.b64encode(tts_resp.content).decode('utf-8')
+        if not ELEVENLABS_API_KEY or not voice_id:
+            print("❌ ElevenLabs API key or voice_id not set.")
+            return None
+
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+        payload = {
+            "text": reply_text,
+            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
+        }
+        headers = {
+            "xi-api-key": ELEVENLABS_API_KEY,
+            "Content-Type": "application/json"
+        }
+        resp = requests.post(url, headers=headers, json=payload, timeout=30)
+        if resp.status_code == 200:
+            print("✅ ElevenLabs TTS call succeeded.")
+            return base64.b64encode(resp.content).decode('utf-8')
         else:
-            print(f"TTS error: {tts_resp.status_code} - {tts_resp.text}")
+            print(f"❌ ElevenLabs TTS failed: {resp.status_code} - {resp.text}")
             return None
     except Exception as e:
-        print(f"TTS generation error: {e}")
+        print(f"❌ ElevenLabs TTS exception: {e}")
         return None
 
 def log_to_memory(event, event_type, reply=""):
