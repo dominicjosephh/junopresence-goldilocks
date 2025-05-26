@@ -54,23 +54,25 @@ async def conversation_history():
         return JSONResponse(content={"history": history})
     except Exception as e:
         print(f"Error fetching conversation history: {e}")
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+        return JSONResponse(content={"error": str(e), "tts": ""}, status_code=500)
 
 @app.post("/api/process_audio")
 async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None), text_input: str = Form(None)):
     try:
         memory_data = load_memory()
 
+        # Ritual mode branch
         if ritual_mode:
             ritual_response = rituals.get(ritual_mode, f"{ritual_mode.capitalize()} ritual initiated.")
             log_to_memory("Ritual triggered: " + ritual_mode, "Ritual")
-            return JSONResponse(content={"reply": ritual_response})
+            print(f"[RITUAL] Mode: {ritual_mode}, Reply: {ritual_response}")
+            return JSONResponse(content={"reply": ritual_response, "tts": ""})
 
-        # Vault logic
+        # Vault logic branch
         if text_input and "vault unlock" in text_input.lower():
             try:
                 if not os.path.exists(VAULT_FILE):
-                    return JSONResponse(content={"reply": "❌ Vault is empty or missing."})
+                    return JSONResponse(content={"reply": "❌ Vault is empty or missing.", "tts": ""})
                 with open(VAULT_FILE, 'r') as vf:
                     vault = json.load(vf)
                 _, item_info = text_input.lower().split("vault unlock:", 1)
@@ -78,14 +80,14 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
                 item = vault.get(item_name.strip())
                 if item and item.get('code') == code.strip():
                     log_to_memory(f"Vault access granted for item: {item_name}", "Vault")
-                    return JSONResponse(content={"reply": f"🔒 Vault access granted: {item['content']}"})
+                    return JSONResponse(content={"reply": f"🔒 Vault access granted: {item['content']}", "tts": ""})
                 else:
-                    return JSONResponse(content={"reply": "❌ Vault access denied."})
+                    return JSONResponse(content={"reply": "❌ Vault access denied.", "tts": ""})
             except Exception as e:
                 print(f"Vault command error: {e}")
-                return JSONResponse(content={"reply": "❌ Vault command format error."})
+                return JSONResponse(content={"reply": "❌ Vault command format error.", "tts": ""})
 
-        # AUDIO branch
+        # Audio or Text Input branch
         if audio:
             print("📥 Audio file received")
             contents = await audio.read()
@@ -96,13 +98,14 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
                     transcript = openai.Audio.transcribe("whisper-1", audio_file, timeout=30)
                 except Exception as e:
                     print(f"Transcription error: {e}")
-                    return JSONResponse(content={"error": "❌ Whisper transcription failed."})
+                    return JSONResponse(content={"error": "❌ Whisper transcription failed.", "tts": ""})
             print(f"📝 Transcript: {transcript['text']}")
             user_text = transcript['text']
         elif text_input:
             user_text = text_input
         else:
-            return JSONResponse(content={"reply": "❌ No valid input received."})
+            print("[ERROR] No valid input received.")
+            return JSONResponse(content={"reply": "❌ No valid input received.", "tts": ""})
 
         # Generate GPT-4 reply (not streamed)
         messages = build_chat_messages(user_text)
@@ -115,18 +118,19 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
             full_reply = chat_resp.choices[0].message['content'].strip()
         except Exception as e:
             print(f"OpenAI chat error: {e}")
-            return JSONResponse(content={"error": "❌ GPT-4 chat failed."})
+            return JSONResponse(content={"error": "❌ GPT-4 chat failed.", "tts": ""})
 
         # Generate TTS for reply
         tts_encoded = generate_tts(full_reply)
         if not tts_encoded:
             print("❌ No TTS audio returned for this response.")
-            return JSONResponse(content={"error": "❌ TTS generation failed."})
+            return JSONResponse(content={"error": "❌ TTS generation failed.", "tts": ""})
 
         mood = detect_mood(full_reply)
         log_to_memory(user_text, mood, reply=full_reply)
         update_session_memory(user_text, full_reply, mood)
 
+        print(f"[SUCCESS] Reply generated. Length: {len(full_reply)} | TTS audio present.")
         return JSONResponse(content={
             "tts": tts_encoded,
             "reply": full_reply,
@@ -135,7 +139,7 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
 
     except Exception as e:
         print(f"Processing error: {e}")
-        return JSONResponse(content={"error": str(e)})
+        return JSONResponse(content={"error": str(e), "tts": ""})
 
 def split_into_sentences(text):
     import re
