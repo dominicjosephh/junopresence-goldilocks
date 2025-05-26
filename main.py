@@ -14,7 +14,7 @@ import uvicorn
 load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
-voice_id = "bZV4D3YurjhgEC2jJoal"  # Change to your ElevenLabs voice id
+voice_id = "bZV4D3YurjhgEC2jJoal"  # Replace with your actual ElevenLabs voice_id
 
 MEMORY_FILE = 'memory.json'
 VAULT_FILE = 'vault.json'
@@ -169,6 +169,8 @@ def generate_tts(reply_text):
             "Content-Type": "application/json"
         }
         resp = requests.post(url, headers=headers, json=payload, timeout=30)
+        print("TTS resp status:", resp.status_code)
+        print("TTS resp text:", resp.text[:300])
         if resp.status_code == 200:
             print("✅ ElevenLabs TTS call succeeded.")
             return base64.b64encode(resp.content).decode('utf-8')
