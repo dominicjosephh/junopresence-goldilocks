@@ -4,11 +4,10 @@ import base64
 import requests
 from datetime import datetime
 from fastapi import FastAPI, UploadFile, Form
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import openai
 import uvicorn
-import asyncio
 
 # 🌟 JUNO PRESENCE BACKEND - SOUL CORE 🌟
 
@@ -67,6 +66,7 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
             log_to_memory("Ritual triggered: " + ritual_mode, "Ritual")
             return JSONResponse(content={"reply": ritual_response})
 
+        # Vault logic
         if text_input and "vault unlock" in text_input.lower():
             try:
                 if not os.path.exists(VAULT_FILE):
@@ -85,6 +85,7 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
                 print(f"Vault command error: {e}")
                 return JSONResponse(content={"reply": "❌ Vault command format error."})
 
+        # AUDIO branch
         if audio:
             print("📥 Audio file received")
             contents = await audio.read()
@@ -97,18 +98,40 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
                     print(f"Transcription error: {e}")
                     return JSONResponse(content={"error": "❌ Whisper transcription failed."})
             print(f"📝 Transcript: {transcript['text']}")
-            return StreamingResponse(
-                stream_gpt_and_tts(transcript['text']),
-                media_type="application/json"
-            )
+            user_text = transcript['text']
+        elif text_input:
+            user_text = text_input
+        else:
+            return JSONResponse(content={"reply": "❌ No valid input received."})
 
-        if text_input:
-            return StreamingResponse(
-                stream_gpt_and_tts(text_input),
-                media_type="application/json"
+        # Generate GPT-4 reply (not streamed)
+        messages = build_chat_messages(user_text)
+        try:
+            chat_resp = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=messages,
+                temperature=0.8
             )
+            full_reply = chat_resp.choices[0].message['content'].strip()
+        except Exception as e:
+            print(f"OpenAI chat error: {e}")
+            return JSONResponse(content={"error": "❌ GPT-4 chat failed."})
 
-        return JSONResponse(content={"reply": "❌ No valid input received."})
+        # Generate TTS for reply
+        tts_encoded = generate_tts(full_reply)
+        if not tts_encoded:
+            return JSONResponse(content={"error": "❌ TTS generation failed."})
+
+        mood = detect_mood(full_reply)
+        log_to_memory(user_text, mood, reply=full_reply)
+        update_session_memory(user_text, full_reply, mood)
+
+        return JSONResponse(content={
+            "tts": tts_encoded,
+            "reply": full_reply,
+            "mood": mood
+        })
+
     except Exception as e:
         print(f"Processing error: {e}")
         return JSONResponse(content={"error": str(e)})
@@ -168,39 +191,6 @@ def build_chat_messages(user_text):
         messages.append({"role": "assistant", "content": ex["reply"]})
     messages.append({"role": "user", "content": user_text})
     return messages
-
-async def stream_gpt_and_tts(user_text):
-    full_reply = ""
-    buffer = ""
-    messages = build_chat_messages(user_text)
-    try:
-        chat_stream = openai.ChatCompletion.create(model="gpt-4", messages=messages, stream=True)
-        async for chunk in asyncio.to_thread(lambda: list(chat_stream)):
-            if "choices" in chunk and len(chunk["choices"]) > 0:
-                delta = chunk["choices"][0].get("delta", {})
-                content = delta.get("content", "")
-                if content:
-                    buffer += content
-                    if content[-1] in ".!?":
-                        sentence = buffer.strip()
-                        full_reply += sentence + " "
-                        tts_encoded = generate_tts(sentence)
-                        mood = detect_mood(sentence)
-                        log_to_memory(user_text if not full_reply.strip() else sentence, mood, reply=sentence)
-                        update_session_memory(user_text, full_reply.strip(), mood)
-                        yield json.dumps({"sentence": sentence, "tts": tts_encoded, "mood": mood}) + "\n"
-                        buffer = ""
-        if buffer.strip():
-            sentence = buffer.strip()
-            full_reply += sentence
-            tts_encoded = generate_tts(sentence)
-            mood = detect_mood(sentence)
-            log_to_memory(user_text if not full_reply.strip() else sentence, mood, reply=sentence)
-            update_session_memory(user_text, full_reply.strip(), mood)
-            yield json.dumps({"sentence": sentence, "tts": tts_encoded, "mood": mood}) + "\n"
-    except Exception as e:
-        print(f"Streaming error: {e}")
-        yield json.dumps({"sentence": "Error generating response.", "tts": None, "mood": "Error"}) + "\n"
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=5000)
