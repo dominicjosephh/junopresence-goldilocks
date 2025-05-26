@@ -22,6 +22,18 @@ VAULT_FILE = 'vault.json'
 SESSION_MEMORY_LIMIT = 10
 session_memory = []
 
+MOOD_TO_SETTINGS = {
+    "base":      {"stability": 0.5,  "similarity_boost": 0.75},
+    "hype":      {"stability": 0.22, "similarity_boost": 0.85},
+    "empathy":   {"stability": 0.7,  "similarity_boost": 0.8},
+    "shadow":    {"stability": 0.55, "similarity_boost": 0.6},
+    "assert":    {"stability": 0.37, "similarity_boost": 0.68},
+    "challenger":{"stability": 0.19, "similarity_boost": 0.67},
+    "grief":     {"stability": 0.8,  "similarity_boost": 0.7},
+    "joy":       {"stability": 0.17, "similarity_boost": 0.87},
+    "ritual":    {"stability": 0.6,  "similarity_boost": 0.8},
+}
+
 def load_memory():
     if not os.path.exists(MEMORY_FILE):
         return {"blueprint": {}, "rituals": {}, "chronicle": []}
@@ -148,15 +160,21 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
             pprint.pprint(response_content)
             return JSONResponse(content=response_content, media_type="application/json")
 
-        # Generate TTS for reply
-        tts_encoded = generate_tts(full_reply)
+        # Detect mood
+        mood = detect_mood(full_reply)
+        print(f"Detected mood: {mood}")
+
+        # Pre-process reply for smoother speech
+        cleaned_reply = full_reply.strip().replace("..", ".").replace("  ", " ")
+
+        # Generate TTS for reply using mood-based settings
+        tts_encoded = generate_tts(cleaned_reply, mood)
         if not tts_encoded:
             response_content = {"error": "❌ TTS generation failed.", "tts": ""}
             print("Returning JSON (TTS fail):")
             pprint.pprint(response_content)
             return JSONResponse(content=response_content, media_type="application/json")
 
-        mood = detect_mood(full_reply)
         log_to_memory(user_text, mood, reply=full_reply)
         update_session_memory(user_text, full_reply, mood)
 
@@ -186,27 +204,28 @@ def detect_mood(text):
             model="gpt-4",
             messages=[{"role": "user", "content": mood_prompt}]
         )
-        return resp.choices[0].message['content'].strip()
+        return resp.choices[0].message['content'].strip().lower()
     except Exception as e:
         print(f"Mood detection failed: {e}")
-        return "Unknown"
+        return "base"
 
-def generate_tts(reply_text):
+def generate_tts(reply_text, mood="base"):
     try:
-        if not ELEVENLABS_API_KEY or not voice_id:
-            print("❌ ElevenLabs API key or voice_id not set.")
-            return None
-
+        settings = MOOD_TO_SETTINGS.get((mood or "base").lower(), MOOD_TO_SETTINGS["base"])
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
         payload = {
-            "text": reply_text,
-            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
+            "text": reply_text.strip(),
+            "voice_settings": {
+                "stability": settings["stability"],
+                "similarity_boost": settings["similarity_boost"]
+            }
         }
         headers = {
             "xi-api-key": ELEVENLABS_API_KEY,
             "Content-Type": "application/json"
         }
         resp = requests.post(url, headers=headers, json=payload, timeout=15)
+        print(f"TTS request | mood: {mood} | stability: {settings['stability']} | similarity: {settings['similarity_boost']}")
         print("TTS resp status:", resp.status_code)
         if resp.status_code == 200:
             print("✅ ElevenLabs TTS call succeeded.")
