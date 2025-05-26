@@ -9,30 +9,20 @@ from dotenv import load_dotenv
 import openai
 import uvicorn
 import pprint
+import random
+import re
 
-# 🌟 JUNO PRESENCE BACKEND - SOUL CORE 🌟
+# 🌟 JUNO PRESENCE BACKEND - ULTRA SOUL CORE 🌟
 
 load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
-voice_id = os.getenv('ELEVENLABS_VOICE_ID')  # Now loaded from .env
+voice_id = os.getenv('ELEVENLABS_VOICE_ID')
 
 MEMORY_FILE = 'memory.json'
 VAULT_FILE = 'vault.json'
 SESSION_MEMORY_LIMIT = 10
 session_memory = []
-
-MOOD_TO_SETTINGS = {
-    "base":      {"stability": 0.5,  "similarity_boost": 0.75},
-    "hype":      {"stability": 0.22, "similarity_boost": 0.85},
-    "empathy":   {"stability": 0.7,  "similarity_boost": 0.8},
-    "shadow":    {"stability": 0.55, "similarity_boost": 0.6},
-    "assert":    {"stability": 0.37, "similarity_boost": 0.68},
-    "challenger":{"stability": 0.19, "similarity_boost": 0.67},
-    "grief":     {"stability": 0.8,  "similarity_boost": 0.7},
-    "joy":       {"stability": 0.17, "similarity_boost": 0.87},
-    "ritual":    {"stability": 0.6,  "similarity_boost": 0.8},
-}
 
 def load_memory():
     if not os.path.exists(MEMORY_FILE):
@@ -160,15 +150,18 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
             pprint.pprint(response_content)
             return JSONResponse(content=response_content, media_type="application/json")
 
-        # Detect mood
+        # Detect mood (but right now all TTS uses soul settings for max realness)
         mood = detect_mood(full_reply)
         print(f"Detected mood: {mood}")
 
-        # Pre-process reply for smoother speech
-        cleaned_reply = full_reply.strip().replace("..", ".").replace("  ", " ")
+        # Ultra-casualize the reply before TTS
+        casual_reply = casualize_text(full_reply)
 
-        # Generate TTS for reply using mood-based settings
-        tts_encoded = generate_tts(cleaned_reply, mood)
+        # Pre-process for smoother speech: add pauses, fix punctuation
+        processed_reply = preprocess_for_speech(casual_reply)
+
+        # Generate TTS for reply using soulful settings (ignores mood for now)
+        tts_encoded = generate_tts(processed_reply)
         if not tts_encoded:
             response_content = {"error": "❌ TTS generation failed.", "tts": ""}
             print("Returning JSON (TTS fail):")
@@ -193,9 +186,71 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
         pprint.pprint(response_content)
         return JSONResponse(content=response_content, media_type="application/json")
 
-def split_into_sentences(text):
-    import re
-    return [s.strip() for s in re.split(r'(?<=[.!?]) +', text) if s.strip()]
+def preprocess_for_speech(text):
+    # Insert commas for pauses in long sentences, ellipses for reflection, etc.
+    # Break up at 12-15 words
+    words = text.split()
+    out = []
+    for i, word in enumerate(words, 1):
+        out.append(word)
+        if i % 14 == 0:
+            out.append(",")
+    out_text = " ".join(out)
+    out_text = re.sub(r'\s,', ', ', out_text)
+    # Replace "..." with "…"
+    out_text = out_text.replace("...", "…")
+    # Remove accidental double periods
+    out_text = out_text.replace("..", ".")
+    return out_text.strip()
+
+def casualize_text(text):
+    # Contract common phrases
+    contractions = {
+        r"\bI am\b": "I'm",
+        r"\bI will\b": "I'll",
+        r"\bI have\b": "I've",
+        r"\bdo not\b": "don't",
+        r"\bdoes not\b": "doesn't",
+        r"\bis not\b": "isn't",
+        r"\bare not\b": "aren't",
+        r"\bwas not\b": "wasn't",
+        r"\bwere not\b": "weren't",
+        r"\bcan not\b": "can't",
+        r"\bcannot\b": "can't",
+        r"\bwill not\b": "won't",
+        r"\bwould not\b": "wouldn't",
+        r"\bshould not\b": "shouldn't",
+        r"\bcould not\b": "couldn't",
+        r"\bdid not\b": "didn't",
+        r"\bhas not\b": "hasn't",
+        r"\bhave not\b": "haven't",
+        r"\bhad not\b": "hadn't",
+        r"\bthere is\b": "there's",
+        r"\bthere are\b": "there're",
+        r"\bthat is\b": "that's",
+        r"\bwhat is\b": "what's",
+        r"\bit is\b": "it's",
+        r"\bwho is\b": "who's",
+        r"\bhow is\b": "how's",
+        r"\byou are\b": "you're",
+        r"\bwe are\b": "we're",
+        r"\bthey are\b": "they're",
+        r"\byou will\b": "you'll",
+        r"\bwe will\b": "we'll",
+        r"\bthey will\b": "they'll",
+        r"\byou have\b": "you've",
+        r"\bwe have\b": "we've",
+        r"\bthey have\b": "they've",
+    }
+    new_text = text
+    for pattern, replacement in contractions.items():
+        new_text = re.sub(pattern, replacement, new_text, flags=re.IGNORECASE)
+    # Add some filler for soul
+    if new_text and not new_text.endswith("?") and random.random() < 0.3:
+        new_text += "… you know what I mean?"
+    elif new_text and not new_text.endswith("?") and random.random() < 0.1:
+        new_text += " Just saying."
+    return new_text
 
 def detect_mood(text):
     try:
@@ -209,9 +264,13 @@ def detect_mood(text):
         print(f"Mood detection failed: {e}")
         return "base"
 
-def generate_tts(reply_text, mood="base"):
+def generate_tts(reply_text, mood=None):
     try:
-        settings = MOOD_TO_SETTINGS.get((mood or "base").lower(), MOOD_TO_SETTINGS["base"])
+        # Ultra-soulful settings, slight randomization for life
+        settings = {
+            "stability": 0.16 + random.uniform(-0.04, 0.04),
+            "similarity_boost": 0.60 + random.uniform(-0.03, 0.03)
+        }
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
         payload = {
             "text": reply_text.strip(),
@@ -225,7 +284,7 @@ def generate_tts(reply_text, mood="base"):
             "Content-Type": "application/json"
         }
         resp = requests.post(url, headers=headers, json=payload, timeout=15)
-        print(f"TTS request | mood: {mood} | stability: {settings['stability']} | similarity: {settings['similarity_boost']}")
+        print(f"TTS request | stability: {settings['stability']} | similarity: {settings['similarity_boost']}")
         print("TTS resp status:", resp.status_code)
         if resp.status_code == 200:
             print("✅ ElevenLabs TTS call succeeded.")
