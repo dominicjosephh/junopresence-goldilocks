@@ -24,26 +24,7 @@ app = FastAPI()
 async def test():
     return JSONResponse(content={"message": "Backend is live"}, media_type="application/json")
 
-def sentence_stream(text, min_words=4):
-    # Only yield when we have a complete sentence (ends with ., !, ? and has enough words)
-    buffer = ''
-    for char in text:
-        buffer += char
-        if char in '.!?':
-            # Only consider this a "sentence" if it's long enough
-            if len(buffer.strip().split()) >= min_words:
-                yield buffer.strip()
-            buffer = ''
-    # If anything left in the buffer (and long enough), yield it
-    if buffer.strip() and len(buffer.strip().split()) >= min_words:
-        yield buffer.strip()
-
-def limit_sentences(text, max_sentences=MAX_SENTENCES):
-    sentences = re.split(r'(?<=[.!?]) +', text)
-    return ' '.join(sentences[:max_sentences])
-
 def generate_tts(sentence):
-    # Slight randomization for "human" feel
     settings = {
         "stability": 0.16 + random.uniform(-0.04, 0.04),
         "similarity_boost": 0.60 + random.uniform(-0.03, 0.03)
@@ -68,7 +49,6 @@ def generate_tts(sentence):
 @app.post("/api/process_audio")
 async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None), text_input: str = Form(None)):
     try:
-        # --- Handle text_input or transcribe audio (as before) ---
         if audio:
             contents = await audio.read()
             with open('temp_audio.m4a', 'wb') as f:
@@ -81,28 +61,35 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
         else:
             return JSONResponse(content={"reply": "❌ No valid input received.", "tts": ""}, media_type="application/json")
         
-        # --- Stream GPT response sentence by sentence ---
         def response_generator():
             gpt_stream = openai.ChatCompletion.create(
                 model="gpt-4",
-                messages=[{"role": "system", "content": "Reply in a maximum of 6 sentences. Speak naturally and conversationally."},
-                          {"role": "user", "content": user_text}],
+                messages=[
+                    {"role": "system", "content": "Reply in a maximum of 6 sentences. Speak naturally and conversationally."},
+                    {"role": "user", "content": user_text}
+                ],
                 stream=True
             )
             buffer = ''
             sentences_sent = 0
+            # Regex for detecting real sentence boundaries
+            sentence_end_re = re.compile(r'([^.?!]*[.?!])')
             for chunk in gpt_stream:
                 delta = chunk.choices[0].delta.get('content', '')
                 buffer += delta
-                # Use improved sentence_stream to yield only real sentences
-                for sentence in list(sentence_stream(buffer)):
-                    if sentence:
-                        buffer = ''
+                # Look for real sentence boundaries.
+                while True:
+                    match = sentence_end_re.match(buffer)
+                    if not match:
+                        break
+                    sentence = match.group(0).strip()
+                    if len(sentence.split()) >= 4:
                         if sentences_sent < MAX_SENTENCES:
                             tts = generate_tts(sentence)
                             out_data = json.dumps({"reply": sentence, "tts": tts})
                             yield (out_data + '\n')
                             sentences_sent += 1
+                    buffer = buffer[len(sentence):].lstrip()
             # If anything left (and long enough), send it as last sentence
             if buffer.strip() and sentences_sent < MAX_SENTENCES and len(buffer.strip().split()) >= 4:
                 tts = generate_tts(buffer.strip())
