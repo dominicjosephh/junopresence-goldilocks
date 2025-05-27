@@ -72,26 +72,29 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
             )
             buffer = ''
             sentences_sent = 0
-            # Regex for detecting real sentence boundaries
-            sentence_end_re = re.compile(r'([^.?!]*[.?!])')
-            for chunk in gpt_stream:
+            while sentences_sent < MAX_SENTENCES:
+                try:
+                    chunk = next(gpt_stream)
+                except StopIteration:
+                    break
                 delta = chunk.choices[0].delta.get('content', '')
                 buffer += delta
-                # Look for real sentence boundaries.
+                # Look for ALL possible sentence boundaries in buffer
                 while True:
-                    match = sentence_end_re.match(buffer)
+                    match = re.search(r'([^.?!]*[.?!])', buffer)
                     if not match:
                         break
                     sentence = match.group(0).strip()
-                    if len(sentence.split()) >= 4:
-                        if sentences_sent < MAX_SENTENCES:
-                            tts = generate_tts(sentence)
-                            out_data = json.dumps({"reply": sentence, "tts": tts})
-                            yield (out_data + '\n')
-                            sentences_sent += 1
+                    if len(sentence.split()) >= 6:
+                        tts = generate_tts(sentence)
+                        out_data = json.dumps({"reply": sentence, "tts": tts})
+                        yield (out_data + '\n')
+                        sentences_sent += 1
+                        if sentences_sent >= MAX_SENTENCES:
+                            return
                     buffer = buffer[len(sentence):].lstrip()
-            # If anything left (and long enough), send it as last sentence
-            if buffer.strip() and sentences_sent < MAX_SENTENCES and len(buffer.strip().split()) >= 4:
+            # If anything left (and long enough), send as last chunk
+            if buffer.strip() and len(buffer.strip().split()) >= 6 and sentences_sent < MAX_SENTENCES:
                 tts = generate_tts(buffer.strip())
                 out_data = json.dumps({"reply": buffer.strip(), "tts": tts})
                 yield (out_data + '\n')
