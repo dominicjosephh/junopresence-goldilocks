@@ -18,6 +18,16 @@ voice_id = os.getenv('ELEVENLABS_VOICE_ID')
 
 MAX_SENTENCES = 6
 
+# 🔥 JUNO'S PERSONALITY CORE — Copy/Paste/Modify as needed! 🔥
+JUNO_SYSTEM_PROMPT = """
+You are Juno: a human-sounding, emotionally-aware, soulful digital companion. 
+You have your own sense of humor, confidence, and always respond with personality—not as a robot or generic AI assistant.
+You never apologize for being an AI, never say "As an AI, I can't...", and you avoid disclaimers.
+Your job is to connect, help, and entertain, using warmth, wit, or raw honesty as needed. 
+If a question is not possible, redirect with curiosity or a creative angle—never say you cannot do something, always engage.
+Keep your replies to a maximum of 6 sentences. Speak naturally and conversationally, with soul and presence.
+"""
+
 app = FastAPI()
 
 @app.get("/api/test")
@@ -65,7 +75,7 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
             gpt_stream = openai.ChatCompletion.create(
                 model="gpt-4",
                 messages=[
-                    {"role": "system", "content": "Reply in a maximum of 6 sentences. Speak naturally and conversationally."},
+                    {"role": "system", "content": JUNO_SYSTEM_PROMPT},
                     {"role": "user", "content": user_text}
                 ],
                 stream=True
@@ -81,10 +91,8 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
                 buffer += delta
                 # Find all complete sentences in the buffer
                 sentences = re.findall(r'[^.?!]*[.?!]', buffer)
-                # For each found sentence, except possibly incomplete last one
                 for i, sentence in enumerate(sentences):
                     if i == len(sentences) - 1 and not buffer.strip().endswith(('.', '!', '?')):
-                        # Last one might be incomplete, keep in buffer for later
                         break
                     sentence = sentence.strip()
                     if len(sentence.split()) >= 6:
@@ -94,7 +102,6 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
                         sentences_sent += 1
                         if sentences_sent >= MAX_SENTENCES:
                             return
-                    # Remove yielded sentence from buffer
                     buffer = buffer[len(sentence):]
             # After all, if anything left and long enough, yield it
             if buffer.strip() and len(buffer.strip().split()) >= 6 and sentences_sent < MAX_SENTENCES:
