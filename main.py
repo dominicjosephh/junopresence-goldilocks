@@ -24,19 +24,21 @@ app = FastAPI()
 async def test():
     return JSONResponse(content={"message": "Backend is live"}, media_type="application/json")
 
-def sentence_stream(text):
-    # Splits incoming GPT text into sentences as they appear.
-    sentence = ''
+def sentence_stream(text, min_words=4):
+    # Only yield when we have a complete sentence (ends with ., !, ? and has enough words)
+    buffer = ''
     for char in text:
-        sentence += char
+        buffer += char
         if char in '.!?':
-            yield sentence.strip()
-            sentence = ''
-    if sentence.strip():
-        yield sentence.strip()
+            # Only consider this a "sentence" if it's long enough
+            if len(buffer.strip().split()) >= min_words:
+                yield buffer.strip()
+            buffer = ''
+    # If anything left in the buffer (and long enough), yield it
+    if buffer.strip() and len(buffer.strip().split()) >= min_words:
+        yield buffer.strip()
 
 def limit_sentences(text, max_sentences=MAX_SENTENCES):
-    # Only keep the first N sentences.
     sentences = re.split(r'(?<=[.!?]) +', text)
     return ' '.join(sentences[:max_sentences])
 
@@ -82,7 +84,7 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
         # --- Stream GPT response sentence by sentence ---
         def response_generator():
             gpt_stream = openai.ChatCompletion.create(
-                model="gpt-4",  # Or "gpt-3.5-turbo"
+                model="gpt-4",
                 messages=[{"role": "system", "content": "Reply in a maximum of 6 sentences. Speak naturally and conversationally."},
                           {"role": "user", "content": user_text}],
                 stream=True
@@ -92,17 +94,17 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
             for chunk in gpt_stream:
                 delta = chunk.choices[0].delta.get('content', '')
                 buffer += delta
-                # Send out sentences as soon as we see a delimiter.
+                # Use improved sentence_stream to yield only real sentences
                 for sentence in list(sentence_stream(buffer)):
                     if sentence:
-                        buffer = buffer[len(sentence):]
+                        buffer = ''
                         if sentences_sent < MAX_SENTENCES:
                             tts = generate_tts(sentence)
                             out_data = json.dumps({"reply": sentence, "tts": tts})
                             yield (out_data + '\n')
                             sentences_sent += 1
-            # If there is a last partial sentence, send it.
-            if buffer.strip() and sentences_sent < MAX_SENTENCES:
+            # If anything left (and long enough), send it as last sentence
+            if buffer.strip() and sentences_sent < MAX_SENTENCES and len(buffer.strip().split()) >= 4:
                 tts = generate_tts(buffer.strip())
                 out_data = json.dumps({"reply": buffer.strip(), "tts": tts})
                 yield (out_data + '\n')
