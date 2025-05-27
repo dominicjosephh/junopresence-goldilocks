@@ -20,6 +20,7 @@ MAX_SENTENCES = 6
 
 # ----- Memory configs -----
 SESSION_MEMORY_LIMIT = 10
+LONGTERM_MEMORY_LIMIT = 10
 session_memory = []
 
 MEMORY_FILE = 'memory.json'
@@ -41,6 +42,11 @@ def log_to_memory(event, reply=""):
     })
     save_memory(memory_data)
 
+def get_longterm_memory():
+    memory_data = load_memory()
+    # Get the last N from memory.json chronicle
+    return memory_data.get('chronicle', [])[-LONGTERM_MEMORY_LIMIT:]
+
 def update_session_memory(user_text, reply_text):
     global session_memory
     session_memory.append({"user": user_text, "reply": reply_text, "timestamp": datetime.utcnow().isoformat()})
@@ -49,6 +55,11 @@ def update_session_memory(user_text, reply_text):
 
 def build_chat_messages(user_text):
     messages = [{"role": "system", "content": JUNO_SYSTEM_PROMPT}]
+    # Load last N long-term memories (from memory.json)
+    for mem in get_longterm_memory():
+        messages.append({"role": "user", "content": mem["event"]})
+        messages.append({"role": "assistant", "content": mem["reply"]})
+    # Add current session memory
     for ex in session_memory:
         messages.append({"role": "user", "content": ex["user"]})
         messages.append({"role": "assistant", "content": ex["reply"]})
@@ -128,6 +139,7 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
             )
             buffer = ''
             sentences_sent = 0
+            # Streaming response as always
             while sentences_sent < MAX_SENTENCES:
                 try:
                     chunk = next(gpt_stream)
