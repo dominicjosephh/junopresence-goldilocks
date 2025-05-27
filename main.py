@@ -10,8 +10,6 @@ from dotenv import load_dotenv
 import openai
 import uvicorn
 import random
-import pprint
-from io import BytesIO
 
 load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
@@ -21,6 +19,10 @@ voice_id = os.getenv('ELEVENLABS_VOICE_ID')
 MAX_SENTENCES = 6
 
 app = FastAPI()
+
+@app.get("/api/test")
+async def test():
+    return JSONResponse(content={"message": "Backend is live"}, media_type="application/json")
 
 def sentence_stream(text):
     # Splits incoming GPT text into sentences as they appear.
@@ -53,9 +55,12 @@ def generate_tts(sentence):
         "xi-api-key": ELEVENLABS_API_KEY,
         "Content-Type": "application/json"
     }
-    resp = requests.post(url, headers=headers, json=payload, timeout=30)
-    if resp.status_code == 200:
-        return base64.b64encode(resp.content).decode('utf-8')
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=30)
+        if resp.status_code == 200:
+            return base64.b64encode(resp.content).decode('utf-8')
+    except Exception as e:
+        print(f"❌ ElevenLabs TTS exception: {e}")
     return None
 
 @app.post("/api/process_audio")
