@@ -79,12 +79,14 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
                     break
                 delta = chunk.choices[0].delta.get('content', '')
                 buffer += delta
-                # Look for ALL possible sentence boundaries in buffer
-                while True:
-                    match = re.search(r'([^.?!]*[.?!])', buffer)
-                    if not match:
+                # Find all complete sentences in the buffer
+                sentences = re.findall(r'[^.?!]*[.?!]', buffer)
+                # For each found sentence, except possibly incomplete last one
+                for i, sentence in enumerate(sentences):
+                    if i == len(sentences) - 1 and not buffer.strip().endswith(('.', '!', '?')):
+                        # Last one might be incomplete, keep in buffer for later
                         break
-                    sentence = match.group(0).strip()
+                    sentence = sentence.strip()
                     if len(sentence.split()) >= 6:
                         tts = generate_tts(sentence)
                         out_data = json.dumps({"reply": sentence, "tts": tts})
@@ -92,8 +94,9 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
                         sentences_sent += 1
                         if sentences_sent >= MAX_SENTENCES:
                             return
-                    buffer = buffer[len(sentence):].lstrip()
-            # If anything left (and long enough), send as last chunk
+                    # Remove yielded sentence from buffer
+                    buffer = buffer[len(sentence):]
+            # After all, if anything left and long enough, yield it
             if buffer.strip() and len(buffer.strip().split()) >= 6 and sentences_sent < MAX_SENTENCES:
                 tts = generate_tts(buffer.strip())
                 out_data = json.dumps({"reply": buffer.strip(), "tts": tts})
