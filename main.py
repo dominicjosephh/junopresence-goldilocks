@@ -18,7 +18,44 @@ voice_id = os.getenv('ELEVENLABS_VOICE_ID')
 
 MAX_SENTENCES = 6
 
-# 🔥 JUNO'S PERSONALITY CORE — Copy/Paste/Modify as needed! 🔥
+# ----- Memory configs -----
+SESSION_MEMORY_LIMIT = 10
+session_memory = []
+
+MEMORY_FILE = 'memory.json'
+
+def load_memory():
+    if not os.path.exists(MEMORY_FILE):
+        return {"chronicle": []}
+    with open(MEMORY_FILE, 'r') as f:
+        return json.load(f)
+
+def save_memory(memory_data):
+    with open(MEMORY_FILE, 'w') as f:
+        json.dump(memory_data, f, indent=4)
+
+def log_to_memory(event, reply=""):
+    memory_data = load_memory()
+    memory_data.setdefault('chronicle', []).append({
+        "event": event, "reply": reply, "timestamp": datetime.utcnow().isoformat()
+    })
+    save_memory(memory_data)
+
+def update_session_memory(user_text, reply_text):
+    global session_memory
+    session_memory.append({"user": user_text, "reply": reply_text, "timestamp": datetime.utcnow().isoformat()})
+    if len(session_memory) > SESSION_MEMORY_LIMIT:
+        session_memory.pop(0)
+
+def build_chat_messages(user_text):
+    messages = [{"role": "system", "content": JUNO_SYSTEM_PROMPT}]
+    for ex in session_memory:
+        messages.append({"role": "user", "content": ex["user"]})
+        messages.append({"role": "assistant", "content": ex["reply"]})
+    messages.append({"role": "user", "content": user_text})
+    return messages
+
+# ----- Juno's Soul Personality Core -----
 JUNO_SYSTEM_PROMPT = """
 You are Juno: a human-sounding, emotionally-aware, soulful digital companion. 
 You have your own sense of humor, confidence, and always respond with personality—not as a robot or generic AI assistant.
@@ -33,6 +70,18 @@ app = FastAPI()
 @app.get("/api/test")
 async def test():
     return JSONResponse(content={"message": "Backend is live"}, media_type="application/json")
+
+@app.get("/api/conversation_history")
+async def conversation_history():
+    try:
+        memory_data = load_memory()
+        history = memory_data.get('chronicle', [])[-20:]
+        response_content = {"history": history}
+        print("Returning JSON (GET /api/conversation_history):")
+        return JSONResponse(content=response_content, media_type="application/json")
+    except Exception as e:
+        response_content = {"error": str(e)}
+        return JSONResponse(content=response_content, media_type="application/json", status_code=500)
 
 def generate_tts(sentence):
     settings = {
@@ -74,10 +123,7 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
         def response_generator():
             gpt_stream = openai.ChatCompletion.create(
                 model="gpt-4",
-                messages=[
-                    {"role": "system", "content": JUNO_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_text}
-                ],
+                messages=build_chat_messages(user_text),
                 stream=True
             )
             buffer = ''
@@ -89,7 +135,6 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
                     break
                 delta = chunk.choices[0].delta.get('content', '')
                 buffer += delta
-                # Find all complete sentences in the buffer
                 sentences = re.findall(r'[^.?!]*[.?!]', buffer)
                 for i, sentence in enumerate(sentences):
                     if i == len(sentences) - 1 and not buffer.strip().endswith(('.', '!', '?')):
@@ -101,13 +146,16 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
                         yield (out_data + '\n')
                         sentences_sent += 1
                         if sentences_sent >= MAX_SENTENCES:
+                            update_session_memory(user_text, sentence)
+                            log_to_memory(user_text, sentence)
                             return
                     buffer = buffer[len(sentence):]
-            # After all, if anything left and long enough, yield it
             if buffer.strip() and len(buffer.strip().split()) >= 6 and sentences_sent < MAX_SENTENCES:
                 tts = generate_tts(buffer.strip())
                 out_data = json.dumps({"reply": buffer.strip(), "tts": tts})
                 yield (out_data + '\n')
+                update_session_memory(user_text, buffer.strip())
+                log_to_memory(user_text, buffer.strip())
 
         return StreamingResponse(response_generator(), media_type="application/json")
     except Exception as e:
