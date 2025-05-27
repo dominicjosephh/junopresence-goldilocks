@@ -19,7 +19,7 @@ voice_id = os.getenv('ELEVENLABS_VOICE_ID')
 MAX_SENTENCES = 6
 
 # ----- Memory configs -----
-SESSION_MEMORY_LIMIT = 10
+SESSION_MEMORY_LIMIT = 4   # Small to keep prompt concise
 LONGTERM_MEMORY_LIMIT = 10
 session_memory = []
 
@@ -53,13 +53,27 @@ def update_session_memory(user_text, reply_text):
     if len(session_memory) > SESSION_MEMORY_LIMIT:
         session_memory.pop(0)
 
+def get_memory_summary():
+    memories = get_longterm_memory()
+    if not memories:
+        return "Here’s a summary of your recent conversation: None yet."
+    summary_lines = []
+    for mem in memories:
+        summary_lines.append(f"- User: {mem['event']}")
+        summary_lines.append(f"- Juno: {mem['reply']}")
+    summary = (
+        "Here’s a summary of your recent conversation and important ongoing threads. "
+        "You are Juno, a soulful, witty, emotionally aware, human-like digital companion. "
+        "Continue in this authentic style, referencing any unfinished jokes, stories, or context:\n" +
+        "\n".join(summary_lines)
+    )
+    return summary
+
 def build_chat_messages(user_text):
-    messages = [{"role": "system", "content": JUNO_SYSTEM_PROMPT}]
-    # Load last N long-term memories (from memory.json)
-    for mem in get_longterm_memory():
-        messages.append({"role": "user", "content": mem["event"]})
-        messages.append({"role": "assistant", "content": mem["reply"]})
-    # Add current session memory
+    messages = [
+        {"role": "system", "content": JUNO_SYSTEM_PROMPT},
+        {"role": "system", "content": get_memory_summary()}
+    ]
     for ex in session_memory:
         messages.append({"role": "user", "content": ex["user"]})
         messages.append({"role": "assistant", "content": ex["reply"]})
@@ -139,7 +153,6 @@ async def process_audio(audio: UploadFile = None, ritual_mode: str = Form(None),
             )
             buffer = ''
             sentences_sent = 0
-            # Streaming response as always
             while sentences_sent < MAX_SENTENCES:
                 try:
                     chunk = next(gpt_stream)
