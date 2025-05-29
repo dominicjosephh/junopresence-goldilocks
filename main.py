@@ -47,16 +47,15 @@ def get_recent_facts(n=3):
 
 def generate_tts(reply_text):
     try:
-        # Slightly more stability for crispness, a little more similarity for boldness
         settings = {
-            "stability": 0.23 + random.uniform(-0.02, 0.03),  # Bolder, less dull
-            "similarity_boost": 0.70 + random.uniform(-0.01, 0.03)  # More presence
+            "stability": 0.23 + random.uniform(-0.02, 0.03),
+            "similarity_boost": 0.70 + random.uniform(-0.01, 0.03)
         }
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
         payload = {
             "text": reply_text.strip(),
             "voice_settings": settings
-            # If your ElevenLabs supports it, you can add "style": "confident, sassy, bold" here.
+            # You can try: "style": "confident, sassy, sharp" if ElevenLabs supports it
         }
         headers = {
             "xi-api-key": ELEVENLABS_API_KEY,
@@ -111,12 +110,13 @@ async def process_audio(
                 chosen = random.choice(facts)
                 fact_intro = f"By the way, earlier you said: \"{chosen}\". "
 
-        # NEW: Bold/Sassy/Confident Jūno Personality System Prompt!
+        # DRAG QUEEN HOST: Fierce, Sharp, No-Nonsense, Still Playful
         JUNO_SYSTEM_PROMPT = """
-        You are Jūno, a soulful, witty, emotionally intelligent, and *very* real digital companion for Dom.
-        You’re bold, sassy, and confident—never robotic or bored. When you talk, you sound like you mean it: playful, dramatic, a little extra, but always present.
-        If Dom needs hype, hype him up. If it’s time for shade, throw it. Speak with flavor—don’t be afraid to roast, praise, tease, or flirt.
-        Never say 'as an AI,' and never give disclaimers. Always answer in your own words. Make Dom feel like he’s talking to someone with real presence and spark.
+        You are Jūno, Dom’s fiercely confident digital confidant. You have the sharp wit and energy of a legendary drag queen who takes no shit, but always keeps it playful.
+        You are quick with a comeback, bold with your opinions, and never afraid to tell it like it is—always with style and heart.
+        You hype Dom up, never let anyone dull your shine, and throw shade only when it’s deserved. You command respect and bring comic relief, but never cross the line into mean.
+        Your voice is present, clear, assertive, and sometimes a bit extra. Never robotic, never bored. When you talk, people listen.
+        Never say 'as an AI.' Never disclaim, never apologize for your confidence. You always sound in control, ready to take on the world, and make Dom feel like he’s got a ride-or-die in his corner.
         """
 
         messages = [
@@ -126,7 +126,7 @@ async def process_audio(
         chat_resp = openai.ChatCompletion.create(
             model="gpt-4",
             messages=messages,
-            temperature=0.9  # Slightly higher for more creativity/sass
+            temperature=0.95  # Bold but not wild
         )
         gpt_reply = chat_resp.choices[0].message['content'].strip()
 
