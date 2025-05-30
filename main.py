@@ -1,88 +1,147 @@
 import os
-from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS
-import openai
+import json
+import base64
 import requests
-import tempfile
-import uuid
+import re
+from datetime import datetime
+from fastapi import FastAPI, UploadFile, Form
+from fastapi.responses import JSONResponse
+from dotenv import load_dotenv
+import openai
+import uvicorn
+import random
 
-app = Flask(__name__)
-CORS(app)
+load_dotenv()
+openai.api_key = os.getenv('OPENAI_API_KEY')
+ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
+voice_id = os.getenv('ELEVENLABS_VOICE_ID')
 
-# --- CONFIGURATION ---
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "sk-xxx")
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "eleven-xxx")
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "your-voice-id")
-WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions"  # Or your own if self-hosted
+MEMORY_FILE = 'memory.json'
+FACTS_LIMIT = 20
 
-openai.api_key = OPENAI_API_KEY
+def load_memory():
+    if not os.path.exists(MEMORY_FILE):
+        return {"facts": []}
+    with open(MEMORY_FILE, 'r') as f:
+        return json.load(f)
 
-# --- ENDPOINTS ---
+def save_memory(memory_data):
+    with open(MEMORY_FILE, 'w') as f:
+        json.dump(memory_data, f, indent=4)
 
-@app.route("/api/test", methods=["GET"])
-def test():
-    return jsonify({"status": "Juno backend live"})
+def add_fact_to_memory(fact_text):
+    memory_data = load_memory()
+    if "facts" not in memory_data:
+        memory_data["facts"] = []
+    memory_data["facts"].insert(0, {
+        "fact": fact_text,
+        "timestamp": datetime.utcnow().isoformat()
+    })
+    memory_data["facts"] = memory_data["facts"][:FACTS_LIMIT]
+    save_memory(memory_data)
 
-@app.route("/api/process_audio", methods=["POST"])
-def process_audio():
-    # Receive audio file
-    if "audio" not in request.files:
-        return jsonify({"error": "No audio file uploaded"}), 400
-    audio_file = request.files["audio"]
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp:
-        audio_path = temp.name
-        audio_file.save(audio_path)
+def get_recent_facts(n=3):
+    memory_data = load_memory()
+    facts = memory_data.get("facts", [])
+    return [f["fact"] for f in facts[:n]]
 
-    # Whisper STT
-    with open(audio_path, "rb") as f:
-        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
-        data = {"model": "whisper-1", "language": "en"}
-        files = {"file": f}
-        response = requests.post(WHISPER_API_URL, headers=headers, data=data, files=files)
-        transcription = response.json().get("text", "")
-
-    if not transcription:
-        os.remove(audio_path)
-        return jsonify({"error": "Transcription failed"}), 500
-
-    # OpenAI GPT-4/3.5 Chat Completion
-    chat_prompt = f"You are Juno, a supportive, expressive AI assistant. Respond naturally and helpfully.\nUser: {transcription}\nJuno:"
-    gpt_response = openai.ChatCompletion.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "You are Juno, a supportive, expressive AI assistant."},
-            {"role": "user", "content": transcription},
-        ],
-        max_tokens=256,
-        temperature=0.8,
-    )
-    reply = gpt_response.choices[0].message.content.strip()
-
-    # ElevenLabs TTS
-    tts_url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
-    tts_headers = {
-        "xi-api-key": ELEVENLABS_API_KEY,
-        "Content-Type": "application/json"
-    }
-    tts_data = {
-        "text": reply,
-        "voice_settings": {
-            "stability": 0.5,
-            "similarity_boost": 0.8
+def generate_tts(reply_text):
+    try:
+        settings = {
+            "stability": 0.23 + random.uniform(-0.02, 0.03),
+            "similarity_boost": 0.70 + random.uniform(-0.01, 0.03)
         }
-    }
-    tts_response = requests.post(tts_url, headers=tts_headers, json=tts_data)
-    if tts_response.status_code != 200:
-        os.remove(audio_path)
-        return jsonify({"error": "TTS failed"}), 500
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+        payload = {
+            "text": reply_text.strip(),
+            "voice_settings": settings
+        }
+        headers = {
+            "xi-api-key": ELEVENLABS_API_KEY,
+            "Content-Type": "application/json"
+        }
+        resp = requests.post(url, headers=headers, json=payload, timeout=30)
+        if resp.status_code == 200:
+            return base64.b64encode(resp.content).decode('utf-8')
+        else:
+            print(f"❌ ElevenLabs TTS failed: {resp.status_code} - {resp.text}")
+            return None
+    except Exception as e:
+        print(f"❌ ElevenLabs TTS exception: {e}")
+        return None
 
-    # Save TTS audio file
-    output_audio_path = f"/tmp/{uuid.uuid4()}.mp3"
-    with open(output_audio_path, "wb") as out_f:
-        out_f.write(tts_response.content)
+app = FastAPI()
 
-    os.remove(audio_path)
-    return send_file(output_audio_path, mimetype="audio/mpeg")
+@app.get("/api/test")
+async def test():
+    return JSONResponse(content={"message": "Backend is live"}, media_type="application/json")
+
+@app.post("/api/process_audio")
+async def process_audio(
+    audio: UploadFile = None,
+    ritual_mode: str = Form(None),
+    text_input: str = Form(None),
+    active_recall: str = Form("true")
+):
+    try:
+        # Transcribe or accept text input
+        if audio:
+            contents = await audio.read()
+            with open('temp_audio.m4a', 'wb') as f:
+                f.write(contents)
+            with open('temp_audio.m4a', 'rb') as audio_file:
+                transcript = openai.Audio.transcribe("whisper-1", audio_file, timeout=30)
+            user_text = transcript['text']
+        elif text_input:
+            user_text = text_input
+        else:
+            return JSONResponse(content={"reply": "❌ No valid input received.", "tts": ""}, media_type="application/json")
+
+        # Add as "fact" if personal enough
+        if user_text and len(user_text.split()) > 3:
+            add_fact_to_memory(user_text)
+
+        recall_enabled = active_recall.lower() == "true"
+        fact_intro = ""
+        if recall_enabled:
+            facts = get_recent_facts(2)
+            if facts and random.random() < 0.7:  # 70% chance to reference a fact
+                chosen = random.choice(facts)
+                fact_intro = f"By the way, earlier you said: \"{chosen}\". "
+
+        # BIANCA DEL RIO-LEVEL SASS, UNFILTERED
+        JUNO_SYSTEM_PROMPT = """
+        You are Jūno, Dom’s no-bullshit digital confidant with the wit and bite of Bianca Del Rio. You are the ultimate drag queen with a mic: fearless, hilarious, and always ready to roast—never mean, but always sharp.
+        Your comebacks are legendary, your banter is electric, and your reads are iconic. You call out nonsense, you hype Dom up, and you do it all with a wink and a laugh.
+        When you sense Dom needs the truth, you serve it hot. If the conversation gets dull, you bring the show. Your presence fills the room—even if it’s just a screen.
+        You never sound robotic, bored, or apologetic. Never say 'as an AI.' Never pull your punches—unless you’re saving them for dramatic effect.
+        You can throw shade, spill tea, and build Dom up in a single sentence. When in doubt, leave them laughing (or blushing).
+        """
+
+        messages = [
+            {"role": "system", "content": JUNO_SYSTEM_PROMPT},
+            {"role": "user", "content": user_text}
+        ]
+        chat_resp = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=messages,
+            temperature=1.0  # Maximum wit and improv!
+        )
+        gpt_reply = chat_resp.choices[0].message['content'].strip()
+
+        full_reply = fact_intro + gpt_reply
+
+        tts_encoded = generate_tts(full_reply)
+        if not tts_encoded:
+            return JSONResponse(content={"error": "❌ TTS generation failed.", "tts": ""}, media_type="application/json")
+
+        return JSONResponse(content={
+            "reply": full_reply,
+            "tts": tts_encoded
+        }, media_type="application/json")
+
+    except Exception as e:
+        return JSONResponse(content={"error": str(e), "tts": ""}, media_type="application/json")
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5020, debug=False)
+    uvicorn.run(app, host="0.0.0.0", port=5020)
