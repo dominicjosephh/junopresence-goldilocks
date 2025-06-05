@@ -1,12 +1,11 @@
-from typing import Optional
-from fastapi import FastAPI, UploadFile, Form
-from fastapi.responses import JSONResponse
 import os
 import json
 import base64
 import requests
 import re
 from datetime import datetime
+from fastapi import FastAPI, UploadFile, Form
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import openai
 import uvicorn
@@ -73,13 +72,17 @@ def generate_tts(reply_text):
 
 app = FastAPI()
 
+@app.get("/api/test")
+async def test():
+    return JSONResponse(content={"message": "Backend is live"}, media_type="application/json")
+
 @app.post("/api/process_audio")
 async def process_audio(
     audio: UploadFile = None,
     ritual_mode: str = Form(None),
     text_input: str = Form(None),
-    active_recall: str = Form("true"),
-    chat_history: Optional[str] = Form(None)  # NEW FIELD!
+    chat_history: str = Form(None),
+    active_recall: str = Form("true")
 ):
     try:
         # Transcribe or accept text input
@@ -107,30 +110,30 @@ async def process_audio(
                 chosen = random.choice(facts)
                 fact_intro = f"By the way, earlier you said: \"{chosen}\". "
 
-        # DOM-STYLE, REAL BESTIE SYSTEM PROMPT
-        JUNO_SYSTEM_PROMPT = """
-        You are Juno, Dom’s brutally loyal, unfiltered, but caring digital confidant.
-        You’re sharp, emotionally real, and always speak like a human best friend—not a bot or drag persona.
-        Your replies are witty, direct, supportive, and sometimes sassy, but always rooted in trust, honesty, and love for Dom.
-        Never use filler, never repeat yourself, and never break character.
-        """
-
-        # --- Build messages with chat history ---
-        messages = [{"role": "system", "content": JUNO_SYSTEM_PROMPT}]
+        # Parse chat_history (and limit to last 4!)
+        history = []
         if chat_history:
             try:
-                history_list = json.loads(chat_history)
-                messages.extend(history_list)
+                history = json.loads(chat_history)
+                if len(history) > 4:
+                    history = history[-4:]
             except Exception as e:
-                print(f"Error parsing chat_history: {e}")
-                messages.append({"role": "user", "content": user_text})
-        else:
-            messages.append({"role": "user", "content": user_text})
+                print(f"Chat history parse error: {e}")
 
+        # BIANCA DEL RIO-LEVEL SASS, UNFILTERED
+        JUNO_SYSTEM_PROMPT = """
+        You are Jūno, Dom’s no-bullshit digital confidant with the wit and bite of Bianca Del Rio. You are the ultimate drag queen with a mic: fearless, hilarious, and always ready to roast—never mean, but always sharp.
+        Your comebacks are legendary, your banter is electric, and your reads are iconic. You call out nonsense, you hype Dom up, and you do it all with a wink and a laugh.
+        When you sense Dom needs the truth, you serve it hot. If the conversation gets dull, you bring the show. Your presence fills the room—even if it’s just a screen.
+        You never sound robotic, bored, or apologetic. Never say 'as an AI.' Never pull your punches—unless you’re saving them for dramatic effect.
+        You can throw shade, spill tea, and build Dom up in a single sentence. When in doubt, leave them laughing (or blushing).
+        """
+
+        messages = [{"role": "system", "content": JUNO_SYSTEM_PROMPT}] + history + [{"role": "user", "content": user_text}]
         chat_resp = openai.ChatCompletion.create(
             model="gpt-4",
             messages=messages,
-            temperature=1.0
+            temperature=1.0  # Maximum wit and improv!
         )
         gpt_reply = chat_resp.choices[0].message['content'].strip()
 
