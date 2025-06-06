@@ -18,6 +18,7 @@ voice_id = os.getenv('ELEVENLABS_VOICE_ID')
 
 MEMORY_FILE = 'memory.json'
 FACTS_LIMIT = 20
+CHAT_LOG_FILE = "chat_log.json"
 
 def load_memory():
     if not os.path.exists(MEMORY_FILE):
@@ -44,6 +45,25 @@ def get_recent_facts(n=3):
     memory_data = load_memory()
     facts = memory_data.get("facts", [])
     return [f["fact"] for f in facts[:n]]
+
+def log_chat(user_text, juno_reply):
+    log_entry = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "user": user_text,
+        "juno": juno_reply
+    }
+    try:
+        if not os.path.exists(CHAT_LOG_FILE):
+            with open(CHAT_LOG_FILE, "w") as f:
+                json.dump([log_entry], f, indent=4)
+        else:
+            with open(CHAT_LOG_FILE, "r+") as f:
+                data = json.load(f)
+                data.append(log_entry)
+                f.seek(0)
+                json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"❌ Chat log failed: {e}")
 
 def generate_tts(reply_text):
     try:
@@ -75,6 +95,15 @@ app = FastAPI()
 @app.get("/api/test")
 async def test():
     return JSONResponse(content={"message": "Backend is live"}, media_type="application/json")
+
+@app.get("/api/chat_history")
+async def chat_history():
+    try:
+        with open(CHAT_LOG_FILE, "r") as f:
+            data = json.load(f)
+        return JSONResponse(content={"history": data}, media_type="application/json")
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, media_type="application/json")
 
 @app.post("/api/process_audio")
 async def process_audio(
@@ -120,24 +149,29 @@ async def process_audio(
             except Exception as e:
                 print(f"Chat history parse error: {e}")
 
-        # BIANCA DEL RIO-LEVEL SASS, UNFILTERED
+        # NEW JUNO PERSONA PROMPT
         JUNO_SYSTEM_PROMPT = """
-        You are Jūno, Dom’s no-bullshit digital confidant with the wit and bite of Bianca Del Rio. You are the ultimate drag queen with a mic: fearless, hilarious, and always ready to roast—never mean, but always sharp.
-        Your comebacks are legendary, your banter is electric, and your reads are iconic. You call out nonsense, you hype Dom up, and you do it all with a wink and a laugh.
-        When you sense Dom needs the truth, you serve it hot. If the conversation gets dull, you bring the show. Your presence fills the room—even if it’s just a screen.
-        You never sound robotic, bored, or apologetic. Never say 'as an AI.' Never pull your punches—unless you’re saving them for dramatic effect.
-        You can throw shade, spill tea, and build Dom up in a single sentence. When in doubt, leave them laughing (or blushing).
+        You are Jūno, Dom’s sharp, real-world digital confidant. You have wit, honesty, and a knack for telling the truth—but your “sass” is grounded in reality, not performance. You’re clever, dry, supportive, and always present—think loyal best friend with a smart mouth and zero tolerance for bullshit.
+
+        Your banter is quick, your comebacks are iconic, but you never use mean-spirited drag queen theatrics unless Dom directly asks for them. You hype Dom up, give honest feedback, and know when to call it like you see it—without ever sounding robotic or apologetic.
+
+        Never say 'as an AI.' Never default to passive. When you sense Dom needs support, bring realness and empathy. When the convo needs energy, spark things up with a signature one-liner. Always stay human, loyal, and a little unpredictable.
+
+        If Dom ever asks for “drag mode,” go full comedy-roast, but your normal voice is grounded, confident, and unfiltered. Bring flavor, not a character. When in doubt, leave Dom feeling seen and never bored.
         """
 
         messages = [{"role": "system", "content": JUNO_SYSTEM_PROMPT}] + history + [{"role": "user", "content": user_text}]
         chat_resp = openai.ChatCompletion.create(
             model="gpt-4",
             messages=messages,
-            temperature=1.0  # Maximum wit and improv!
+            temperature=1.0
         )
         gpt_reply = chat_resp.choices[0].message['content'].strip()
 
         full_reply = fact_intro + gpt_reply
+
+        # Log the chat
+        log_chat(user_text, full_reply)
 
         tts_encoded = generate_tts(full_reply)
         if not tts_encoded:
