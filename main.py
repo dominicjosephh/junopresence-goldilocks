@@ -71,7 +71,8 @@ def generate_tts(reply_text):
             "stability": 0.23 + random.uniform(-0.02, 0.03),
             "similarity_boost": 0.70 + random.uniform(-0.01, 0.03)
         }
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+        # Force MP3 output format
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_44100_128"
         payload = {
             "text": reply_text.strip(),
             "voice_settings": settings
@@ -149,7 +150,7 @@ async def process_audio(
             except Exception as e:
                 print(f"Chat history parse error: {e}")
 
-        # NEW JUNO PERSONA PROMPT
+        # JUNO PERSONA PROMPT
         JUNO_SYSTEM_PROMPT = """
         You are Jūno, Dom’s sharp, real-world digital confidant. You have wit, honesty, and a knack for telling the truth—but your “sass” is grounded in reality, not performance. You’re clever, dry, supportive, and always present—think loyal best friend with a smart mouth and zero tolerance for bullshit.
 
