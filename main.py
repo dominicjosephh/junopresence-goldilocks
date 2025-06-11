@@ -16,6 +16,11 @@ openai.api_key = os.getenv('OPENAI_API_KEY')
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
 voice_id = os.getenv('ELEVENLABS_VOICE_ID')
 
+# --- SPOTIFY ENV VARS ---
+SPOTIFY_CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
+SPOTIFY_CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
+SPOTIFY_REDIRECT_URI = os.getenv('SPOTIFY_REDIRECT_URI')
+
 MEMORY_FILE = 'memory.json'
 FACTS_LIMIT = 20
 CHAT_LOG_FILE = "chat_log.json"
@@ -71,7 +76,6 @@ def generate_tts(reply_text):
             "stability": 0.23 + random.uniform(-0.02, 0.03),
             "similarity_boost": 0.70 + random.uniform(-0.01, 0.03)
         }
-        # Force MP3 output format
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_44100_128"
         payload = {
             "text": reply_text.strip(),
@@ -91,6 +95,26 @@ def generate_tts(reply_text):
         print(f"❌ ElevenLabs TTS exception: {e}")
         return None
 
+# ---- SPOTIFY TOKEN HELPER ----
+def get_spotify_token():
+    """Get Spotify API token using client credentials flow."""
+    if not SPOTIFY_CLIENT_ID or not SPOTIFY_CLIENT_SECRET:
+        print("❌ SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET is not set in .env")
+        return None
+    auth_str = f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}"
+    b64_auth_str = base64.b64encode(auth_str.encode()).decode()
+    headers = {
+        "Authorization": f"Basic {b64_auth_str}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+    data = {"grant_type": "client_credentials"}
+    resp = requests.post("https://accounts.spotify.com/api/token", headers=headers, data=data)
+    if resp.status_code == 200:
+        return resp.json()["access_token"]
+    else:
+        print(f"Spotify token error: {resp.status_code} {resp.text}")
+        return None
+
 app = FastAPI()
 
 @app.get("/api/test")
@@ -105,6 +129,27 @@ async def chat_history():
         return JSONResponse(content={"history": data}, media_type="application/json")
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, media_type="application/json")
+
+@app.get("/api/spotify_test")
+async def spotify_test():
+    token = get_spotify_token()
+    if not token:
+        return JSONResponse(content={"error": "Spotify auth failed"}, media_type="application/json")
+    # Example: Outkast - Hey Ya!
+    test_track_id = "3n3Ppam7vgaVa1iaRUc9Lp"
+    resp = requests.get(
+        f"https://api.spotify.com/v1/tracks/{test_track_id}",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    if resp.status_code == 200:
+        track = resp.json()
+        return JSONResponse(content={
+            "track": track["name"],
+            "artist": track["artists"][0]["name"],
+            "album": track["album"]["name"]
+        }, media_type="application/json")
+    else:
+        return JSONResponse(content={"error": resp.text}, media_type="application/json")
 
 @app.post("/api/process_audio")
 async def process_audio(
