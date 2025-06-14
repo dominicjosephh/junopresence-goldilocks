@@ -63,10 +63,14 @@ def log_chat(user_text, juno_reply):
                 json.dump([log_entry], f, indent=4)
         else:
             with open(CHAT_LOG_FILE, "r+") as f:
-                data = json.load(f)
+                try:
+                    data = json.load(f)
+                except json.JSONDecodeError:
+                    data = []
                 data.append(log_entry)
                 f.seek(0)
                 json.dump(data, f, indent=4)
+                f.truncate()
     except Exception as e:
         print(f"❌ Chat log failed: {e}")
 
