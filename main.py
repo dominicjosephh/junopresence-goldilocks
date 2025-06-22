@@ -5,8 +5,7 @@ import requests
 import random
 from datetime import datetime
 from fastapi import FastAPI, UploadFile, Form
-from fastapi.responses import JSONResponse
-from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse, FileResponse
 from dotenv import load_dotenv
 import openai
 import uvicorn
@@ -74,13 +73,13 @@ def log_chat(user_text, juno_reply):
     except Exception as e:
         print(f"❌ Chat log failed: {e}")
 
-def generate_tts(reply_text, output_path="juno_response.m4a"):
+def generate_tts(reply_text, output_path="juno_response.mp3"):
     try:
         settings = {
             "stability": 0.23 + random.uniform(-0.02, 0.03),
             "similarity_boost": 0.70 + random.uniform(-0.01, 0.03)
         }
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mpeg"
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_44100_128"
         payload = {
             "text": reply_text.strip(),
             "voice_settings": settings
@@ -212,13 +211,12 @@ async def process_audio(
 
         log_chat(user_text, full_reply)
 
-        # 🔥 NEW: Generate real audio file
-        audio_path = "juno_response.m4a"
+        # Generate MP3 audio file
+        audio_path = "juno_response.mp3"
         tts_result = generate_tts(full_reply, output_path=audio_path)
         if not tts_result:
             return JSONResponse(content={"error": "❌ TTS generation failed."}, media_type="application/json")
-        # Serve as audio/mp4 for m4a
-        return FileResponse(path=audio_path, media_type="audio/mp4")
+        return FileResponse(path=audio_path, media_type="audio/mpeg")
     except Exception as e:
         print(f"❌ Server error: {e}")
         return JSONResponse(content={"error": str(e)}, media_type="application/json")
