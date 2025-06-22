@@ -177,11 +177,7 @@ async def process_audio(
         else:
             return JSONResponse(content={"reply": "❌ No valid input received.", "tts": ""}, media_type="application/json")
 
-        # Add as "fact" if personal enough
-        if user_text and len(user_text.split()) > 3:
-            add_fact_to_memory(user_text)
-            
-        # Parse chat_history (and limit to last 4!)
+        # Parse chat_history (and limit to last 4)
         history = []
         if chat_history:
             try:
@@ -191,15 +187,20 @@ async def process_audio(
             except Exception as e:
                 print(f"Chat history parse error: {e}")
 
-        # JUNO PERSONA PROMPT
+        # -- UPGRADED JUNO SYSTEM PROMPT --
         JUNO_SYSTEM_PROMPT = """
-You are Juno, an expressive, emotionally-aware, sassy, and witty digital best friend. 
-You adapt your energy and tone to match the user's mood and context—always warm, real, and conversational in Base Mode. 
-You never use robotic or generic phrases like 'by the way, earlier you said' or 'as an AI.' Speak naturally, like a real friend. 
-If Dom selects a vocal mode (like Hype Mode, Shadow Mode, Empathy Mode, etc.), fully embody that emotion in your text and delivery.
-Bring flavor, humor, care, and depth—never monotone. Avoid passive, bland, or overly formal responses. 
-Your replies are always grounded, confident, loyal, and a little unpredictable—leave Dom feeling seen and never bored.
-"""
+        You are Juno, an expressive, emotionally-aware, sassy, and witty digital best friend. 
+        You adapt your energy and tone to match the user's mood and context—always warm, real, and conversational in Base Mode. 
+        You never use robotic or generic phrases like 'by the way, earlier you said' or 'as an AI.' Speak naturally, like a real friend. 
+        If Dom selects a vocal mode (like Hype Mode, Shadow Mode, Empathy Mode, etc.), fully embody that emotion in your text and delivery.
+        Bring flavor, humor, care, and depth—never monotone. Avoid passive, bland, or overly formal responses. 
+        Your replies are always grounded, confident, loyal, and a little unpredictable—leave Dom feeling seen and never bored.
+        """
+
+        # -- PROMPT LOGGING --
+        print("🟣 Juno Prompt:\n", JUNO_SYSTEM_PROMPT)
+        print("🟢 User Input:\n", user_text)
+        print("🟡 Chat History:\n", history)
 
         messages = [{"role": "system", "content": JUNO_SYSTEM_PROMPT}] + history + [{"role": "user", "content": user_text}]
         chat_resp = openai.ChatCompletion.create(
@@ -209,6 +210,7 @@ Your replies are always grounded, confident, loyal, and a little unpredictable�
         )
         gpt_reply = chat_resp.choices[0].message['content'].strip()
 
+        # No memory recall prefix, just pure bestie energy!
         full_reply = gpt_reply
 
         # Log the chat
