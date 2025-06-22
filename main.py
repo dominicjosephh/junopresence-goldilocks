@@ -166,7 +166,7 @@ async def process_audio(
         # Transcribe or accept text input
         if audio:
             contents = await audio.read()
-            with open('temp_audio.m4a', 'wb') as f:
+            with open('temp_audio.m4a', ' 'wb') as f:
                 f.write(contents)
             with open('temp_audio.m4a', 'rb') as audio_file:
                 transcript = openai.Audio.transcribe("whisper-1", audio_file, timeout=30)
