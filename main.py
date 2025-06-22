@@ -2,14 +2,13 @@ import os
 import json
 import base64
 import requests
-import re
+import random
 from datetime import datetime
 from fastapi import FastAPI, UploadFile, Form
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import openai
 import uvicorn
-import random
 
 load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
@@ -167,7 +166,7 @@ async def process_audio(
         # Transcribe or accept text input
         if audio:
             contents = await audio.read()
-            with open('temp_audio.m4a', 'wb') as f:
+            with open('temp_audio.m4a', ' 'wb') as f:
                 f.write(contents)
             with open('temp_audio.m4a', 'rb') as audio_file:
                 transcript = openai.Audio.transcribe("whisper-1", audio_file, timeout=30)
