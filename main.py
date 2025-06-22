@@ -74,7 +74,7 @@ def log_chat(user_text, juno_reply):
     except Exception as e:
         print(f"❌ Chat log failed: {e}")
 
-def generate_tts(reply_text, output_path="juno_response.m4a"):
+def generate_tts(reply_text, output_path="juno_response.mp3"):
     try:
         settings = {
             "stability": 0.23 + random.uniform(-0.02, 0.03),
@@ -213,13 +213,13 @@ async def process_audio(
         log_chat(user_text, full_reply)
 
         # 🔥 NEW: Generate real audio file
-        audio_path = "juno_response.m4a"
+        audio_path = "juno_response.mp3"
         tts_result = generate_tts(full_reply, output_path=audio_path)
         if not tts_result:
             return JSONResponse(content={"error": "❌ TTS generation failed."}, media_type="application/json")
 
-        # 🔥 NEW: Return file directly as audio/m4a!
-        return FileResponse(path=audio_path, media_type="audio/m4a")
+        # 🔥 NEW: Return file directly as audio/mpeg!
+        return FileResponse(path=audio_path, media_type="audio/mpeg")
 
     except Exception as e:
         print(f"❌ Server error: {e}")
