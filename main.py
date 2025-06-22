@@ -213,7 +213,7 @@ async def process_audio(
         log_chat(user_text, full_reply)
 
         # 🔥 NEW: Generate real audio file
-        audio_path = "juno_response.mp3"
+        audio_path = "juno_response.m4a"
         tts_result = generate_tts(full_reply, output_path=audio_path)
         if not tts_result:
             return JSONResponse(content={"error": "❌ TTS generation failed."}, media_type="application/json")
