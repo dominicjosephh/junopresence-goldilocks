@@ -4,8 +4,8 @@ import base64
 import requests
 import random
 from datetime import datetime
-from fastapi import FastAPI, UploadFile, Form
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, UploadFile, Form, Response
+from fastapi.responses import JSONResponse, FileResponse
 from dotenv import load_dotenv
 import openai
 import uvicorn
@@ -79,7 +79,7 @@ def generate_tts(reply_text, output_path="juno_response.m4a"):
             "stability": 0.23 + random.uniform(-0.02, 0.03),
             "similarity_boost": 0.70 + random.uniform(-0.01, 0.03)
         }
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mpeg"
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3"  # Changed to mp3
         payload = {
             "text": reply_text.strip(),
             "voice_settings": settings
@@ -177,7 +177,7 @@ async def process_audio(
         elif text_input:
             user_text = text_input
         else:
-            return JSONResponse(content={"reply": None, "audio_b64": None, "error": "❌ No valid input received."}, media_type="application/json")
+            return JSONResponse(content={"reply": None, "error": "❌ No valid input received."}, media_type="application/json")
 
         # Parse chat_history (and limit to last 4)
         history = []
@@ -212,27 +212,28 @@ async def process_audio(
 
         log_chat(user_text, full_reply)
 
-        # Generate MP3 audio file
-        audio_path = "juno_response.m4a"
+        # Generate audio file
+        audio_path = "juno_response.mp3"  # Changed to mp3
         tts_result = generate_tts(full_reply, output_path=audio_path)
+        
         if not tts_result:
+            # If TTS fails, return JSON with reply and error
             return JSONResponse(content={
                 "reply": full_reply,
-                "audio_b64": None,
                 "error": "❌ TTS generation failed."
             }, media_type="application/json")
-
-        # Convert the audio file to base64 for client
-        with open(audio_path, "rb") as f:
-            audio_b64 = base64.b64encode(f.read()).decode("utf-8")
-        return JSONResponse(content={
-            "reply": full_reply,
-            "audio_b64": audio_b64,
-            "error": None
-        }, media_type="application/json")
+        
+        # If successful, return the audio file directly
+        # The FileResponse will set the appropriate content type
+        return FileResponse(
+            path=audio_path, 
+            media_type="audio/mpeg",  # Changed to audio/mpeg for mp3
+            headers={"X-Reply": full_reply}  # Include reply in header if needed
+        )
+        
     except Exception as e:
         print(f"❌ Server error: {e}")
-        return JSONResponse(content={"reply": None, "audio_b64": None, "error": str(e)}, media_type="application/json")
+        return JSONResponse(content={"reply": None, "error": str(e)}, media_type="application/json")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=5020)
