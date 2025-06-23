@@ -5,7 +5,7 @@ import requests
 import random
 from datetime import datetime
 from fastapi import FastAPI, UploadFile, Form
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import openai
 import uvicorn
@@ -165,6 +165,7 @@ async def process_audio(
     active_recall: str = Form("true")
 ):
     try:
+        user_text = None
         # Transcribe or accept text input
         if audio:
             contents = await audio.read()
@@ -176,7 +177,7 @@ async def process_audio(
         elif text_input:
             user_text = text_input
         else:
-            return JSONResponse(content={"error": "❌ No valid input received."}, media_type="application/json")
+            return JSONResponse(content={"reply": None, "audio_b64": None, "error": "❌ No valid input received."}, media_type="application/json")
 
         # Parse chat_history (and limit to last 4)
         history = []
@@ -190,11 +191,11 @@ async def process_audio(
 
         # -- JUNO SYSTEM PROMPT --
         JUNO_SYSTEM_PROMPT = """
-        You are Juno, an expressive, emotionally-aware, sassy, and witty digital best friend. 
-        You adapt your energy and tone to match the user's mood and context—always warm, real, and conversational in Base Mode. 
-        You never use robotic or generic phrases like 'by the way, earlier you said' or 'as an AI.' Speak naturally, like a real friend. 
+        You are Juno, an expressive, emotionally-aware, sassy, and witty digital best friend.
+        You adapt your energy and tone to match the user's mood and context—always warm, real, and conversational in Base Mode.
+        You never use robotic or generic phrases like 'by the way, earlier you said' or 'as an AI.' Speak naturally, like a real friend.
         If Dom selects a vocal mode (like Hype Mode, Shadow Mode, Empathy Mode, etc.), fully embody that emotion in your text and delivery.
-        Bring flavor, humor, care, and depth—never monotone. Avoid passive, bland, or overly formal responses. 
+        Bring flavor, humor, care, and depth—never monotone. Avoid passive, bland, or overly formal responses.
         Your replies are always grounded, confident, loyal, and a little unpredictable—leave Dom feeling seen and never bored.
         """
 
@@ -215,11 +216,23 @@ async def process_audio(
         audio_path = "juno_response.m4a"
         tts_result = generate_tts(full_reply, output_path=audio_path)
         if not tts_result:
-            return JSONResponse(content={"error": "❌ TTS generation failed."}, media_type="application/json")
-        return FileResponse(path=audio_path, media_type="audio/mp4")
+            return JSONResponse(content={
+                "reply": full_reply,
+                "audio_b64": None,
+                "error": "❌ TTS generation failed."
+            }, media_type="application/json")
+
+        # Convert the audio file to base64 for client
+        with open(audio_path, "rb") as f:
+            audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+        return JSONResponse(content={
+            "reply": full_reply,
+            "audio_b64": audio_b64,
+            "error": None
+        }, media_type="application/json")
     except Exception as e:
         print(f"❌ Server error: {e}")
-        return JSONResponse(content={"error": str(e)}, media_type="application/json")
+        return JSONResponse(content={"reply": None, "audio_b64": None, "error": str(e)}, media_type="application/json")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=5020)
