@@ -73,13 +73,13 @@ def log_chat(user_text, juno_reply):
     except Exception as e:
         print(f"❌ Chat log failed: {e}")
 
-def generate_tts(reply_text, output_path="juno_response.mp3"):
+def generate_tts(reply_text, output_path="juno_response.m4a"):
     try:
         settings = {
             "stability": 0.23 + random.uniform(-0.02, 0.03),
             "similarity_boost": 0.70 + random.uniform(-0.01, 0.03)
         }
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_44100_128"
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mpeg"
         payload = {
             "text": reply_text.strip(),
             "voice_settings": settings
@@ -212,11 +212,11 @@ async def process_audio(
         log_chat(user_text, full_reply)
 
         # Generate MP3 audio file
-        audio_path = "juno_response.mp3"
+        audio_path = "juno_response.m4a"
         tts_result = generate_tts(full_reply, output_path=audio_path)
         if not tts_result:
             return JSONResponse(content={"error": "❌ TTS generation failed."}, media_type="application/json")
-        return FileResponse(path=audio_path, media_type="audio/mpeg")
+        return FileResponse(path=audio_path, media_type="audio/mp4")
     except Exception as e:
         print(f"❌ Server error: {e}")
         return JSONResponse(content={"error": str(e)}, media_type="application/json")
