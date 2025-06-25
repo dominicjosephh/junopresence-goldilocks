@@ -9,7 +9,6 @@ from fastapi.responses import JSONResponse, FileResponse
 from dotenv import load_dotenv
 import openai
 import uvicorn
-import subprocess
 
 load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
@@ -74,13 +73,13 @@ def log_chat(user_text, juno_reply):
     except Exception as e:
         print(f"❌ Chat log failed: {e}")
 
-def generate_tts(reply_text, output_path="juno_response.m4a"):
+def generate_tts(reply_text, output_path="juno_response.mp3"):
     try:
         settings = {
             "stability": 0.23 + random.uniform(-0.02, 0.03),
             "similarity_boost": 0.70 + random.uniform(-0.01, 0.03)
         }
-        mp3_path = "juno_response.mp3"
+        # The ONLY supported output formats are: mp3_44100_32, mp3_44100_64, mp3_44100_96, mp3_44100_128, mp3_44100_192, etc.
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_44100_64"
         payload = {
             "text": reply_text.strip(),
@@ -92,17 +91,9 @@ def generate_tts(reply_text, output_path="juno_response.m4a"):
         }
         resp = requests.post(url, headers=headers, json=payload, timeout=30)
         if resp.status_code == 200:
-            with open(mp3_path, 'wb') as f:
+            with open(output_path, 'wb') as f:
                 f.write(resp.content)
-            # Transcode MP3 to M4A using ffmpeg
-            try:
-                subprocess.run([
-                    "ffmpeg", "-y", "-i", mp3_path, "-c:a", "aac", output_path
-                ], check=True)
-                return output_path
-            except Exception as ffmpeg_err:
-                print(f"❌ ffmpeg transcoding failed: {ffmpeg_err}")
-                return None
+            return output_path
         else:
             print(f"❌ ElevenLabs TTS failed: {resp.status_code} - {resp.text}")
             return None
@@ -223,14 +214,27 @@ async def process_audio(
         log_chat(user_text, full_reply)
 
         # Generate audio file
-        audio_path = "juno_response.m4a"
+        audio_path = "juno_response.mp3"
         tts_result = generate_tts(full_reply, output_path=audio_path)
+        
         if not tts_result:
-            return JSONResponse(content={"error": "❌ TTS generation failed."}, media_type="application/json")
-        return FileResponse(path=audio_path, media_type="audio/mp4")
+            # If TTS fails, return JSON with reply and error
+            return JSONResponse(content={
+                "reply": full_reply,
+                "error": "❌ TTS generation failed."
+            }, media_type="application/json")
+        
+        # If successful, return the audio file directly
+        # The FileResponse will set the appropriate content type
+        return FileResponse(
+            path=audio_path, 
+            media_type="audio/mpeg",
+            headers={"X-Reply": full_reply}
+        )
+        
     except Exception as e:
         print(f"❌ Server error: {e}")
-        return JSONResponse(content={"error": str(e)}, media_type="application/json")
+        return JSONResponse(content={"reply": None, "error": str(e)}, media_type="application/json")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=5020)
