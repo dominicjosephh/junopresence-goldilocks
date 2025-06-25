@@ -4,7 +4,7 @@ import base64
 import requests
 import random
 from datetime import datetime
-from fastapi import FastAPI, UploadFile, Form, Response
+from fastapi import FastAPI, UploadFile, Form
 from fastapi.responses import JSONResponse, FileResponse
 from dotenv import load_dotenv
 import openai
@@ -73,13 +73,14 @@ def log_chat(user_text, juno_reply):
     except Exception as e:
         print(f"❌ Chat log failed: {e}")
 
-def generate_tts(reply_text, output_path="juno_response.m4a"):
+def generate_tts(reply_text, output_path="juno_response.mp3"):
     try:
         settings = {
             "stability": 0.23 + random.uniform(-0.02, 0.03),
             "similarity_boost": 0.70 + random.uniform(-0.01, 0.03)
         }
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_44100_64" # Changed to mp3
+        # The ONLY supported output formats are: mp3_44100_32, mp3_44100_64, mp3_44100_96, mp3_44100_128, mp3_44100_192, etc.
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_44100_64"
         payload = {
             "text": reply_text.strip(),
             "voice_settings": settings
@@ -213,7 +214,7 @@ async def process_audio(
         log_chat(user_text, full_reply)
 
         # Generate audio file
-        audio_path = "juno_response.mp3"  # Changed to mp3
+        audio_path = "juno_response.mp3"
         tts_result = generate_tts(full_reply, output_path=audio_path)
         
         if not tts_result:
@@ -227,8 +228,8 @@ async def process_audio(
         # The FileResponse will set the appropriate content type
         return FileResponse(
             path=audio_path, 
-            media_type="audio/mpeg",  # Changed to audio/mpeg for mp3
-            headers={"X-Reply": full_reply}  # Include reply in header if needed
+            media_type="audio/mpeg",
+            headers={"X-Reply": full_reply}
         )
         
     except Exception as e:
