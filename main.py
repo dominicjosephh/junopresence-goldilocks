@@ -208,13 +208,12 @@ async def process_audio(
                 "error": "❌ TTS generation failed.",
                 "truncated": was_truncated
             }, media_type="application/json")
-        
-        # Always send JSON with reply if something goes wrong!
+
+        # ---- FIXED: Only send safe headers! ----
         return FileResponse(
             path=audio_path,
             media_type="audio/mpeg",
             headers={
-                "X-Reply": full_reply[:200] if full_reply else "",
                 "X-TTS-Truncated": str(was_truncated)
             }
         )
