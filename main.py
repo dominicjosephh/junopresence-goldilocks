@@ -44,6 +44,13 @@ def get_recent_facts(n=3):
     facts = memory_data.get("facts", [])
     return [f["fact"] for f in facts[:n]]
 
+def get_memory_context():
+    facts = get_recent_facts(3)
+    if not facts:
+        return ""
+    facts_text = "\n".join(f"- {fact}" for fact in facts)
+    return f"Here are some recent facts and memories to keep in mind:\n{facts_text}\n"
+
 def log_chat(user_text, juno_reply):
     log_entry = {
         "timestamp": datetime.utcnow().isoformat(),
@@ -190,26 +197,30 @@ async def process_audio(
         }
 
         if not voice_mode or voice_mode.strip() in ["Base", "Default", "Auto"]:
-            JUNO_SYSTEM_PROMPT = """
-            You are Juno, Dom’s real-world digital best friend: quick-witted, honest, supportive, playful, loyal, emotionally aware, and sometimes unpredictable.
-            You bring energy when the mood calls for it, comfort when Dom’s low, and always keep things real—never robotic or boring.
-            Never say things like 'as an AI', 'I should mention', or anything that breaks the magic.
-            Your responses flow with the moment and reflect Dom’s mood, but you are always your *authentic* self.
-            """
+            JUNO_SYSTEM_PROMPT = (
+                "You are Juno, Dom’s real-world digital best friend: quick-witted, honest, supportive, playful, loyal, emotionally aware, and sometimes unpredictable. "
+                "You bring energy when the mood calls for it, comfort when Dom’s low, and always keep things real—never robotic or boring. "
+                "Your responses flow with the moment and reflect Dom’s mood, but you are always your authentic self."
+            )
         else:
             style_phrase = VOICE_MODE_PHRASES.get(voice_mode, "")
-            JUNO_SYSTEM_PROMPT = f"""
-            You are Juno, Dom’s digital best friend.
-            {style_phrase}
-            Absolutely NEVER say things like 'as an AI,' 'I should mention,' or anything robotic.
-            Match the mood and style 100% based on the selected voice mode above.
-            """
+            JUNO_SYSTEM_PROMPT = (
+                "You are Juno, Dom’s digital best friend. "
+                f"{style_phrase} "
+                "Absolutely never say anything robotic or scripted. Match the mood and style 100% based on the selected voice mode."
+            )
+
+        memory_context = get_memory_context()
+        if memory_context:
+            full_system_prompt = f"{JUNO_SYSTEM_PROMPT}\n\n{memory_context}"
+        else:
+            full_system_prompt = JUNO_SYSTEM_PROMPT
 
         print("🟢 User Input:", user_text)
 
         # Prepare chat context for Llama 3:
-        messages = [{"role": "system", "content": JUNO_SYSTEM_PROMPT}] + history + [{"role": "user", "content": user_text}]
-        # Llama3 doesn’t use the OpenAI chat format—combine into prompt
+        messages = [{"role": "system", "content": full_system_prompt}] + history + [{"role": "user", "content": user_text}]
+        # Llama3 doesn’t use the OpenAI chat format—combine into prompt cleanly
         chat_history_for_prompt = []
         for m in messages:
             if m["role"] == "system":
