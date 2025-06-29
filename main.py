@@ -1,4 +1,4 @@
-import os
+]import os
 import json
 import base64
 import requests
@@ -23,12 +23,12 @@ CHAT_LOG_FILE = "chat_log.json"
 def load_memory():
     if not os.path.exists(MEMORY_FILE):
         return {"facts": []}
-    with open(MEMORY_FILE, 'r') as f:
+    with open(MEMORY_FILE, 'r', encoding="utf-8") as f:
         return json.load(f)
 
 def save_memory(memory_data):
-    with open(MEMORY_FILE, 'w') as f:
-        json.dump(memory_data, f, indent=4)
+    with open(MEMORY_FILE, 'w', encoding="utf-8") as f:
+        json.dump(memory_data, f, indent=4, ensure_ascii=False)
 
 def add_fact_to_memory(fact_text):
     memory_data = load_memory()
