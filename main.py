@@ -5,7 +5,7 @@ import requests
 import random
 import re
 from datetime import datetime
-from fastapi import FastAPI, UploadFile, Form
+from fastapi import FastAPI, UploadFile, Form, Request
 from fastapi.responses import JSONResponse, FileResponse
 from dotenv import load_dotenv
 import openai
@@ -70,7 +70,7 @@ def log_chat(user_text, juno_reply):
         print(f"❌ Chat log failed: {e}")
 
 def clean_reply_for_tts(reply):
-    # Remove all non-ASCII characters (including emojis)
+    # Remove all non-ASCII characters (including emojis) for TTS
     return re.sub(r'[^\x00-\x7F]+', '', reply)
 
 def generate_tts(reply_text, output_path="juno_response.mp3"):
@@ -139,7 +139,7 @@ async def process_audio(
         else:
             return JSONResponse(content={"reply": None, "error": "❌ No valid input received."}, media_type="application/json")
 
-        # Parse chat_history (and limit to last 4)
+        # Parse chat_history (limit to last 4)
         history = []
         if chat_history:
             try:
@@ -149,7 +149,7 @@ async def process_audio(
             except Exception as e:
                 print(f"Chat history parse error: {e}")
 
-        # ----------- PERSONALITY LOGIC -----------
+        # --- PERSONALITY/VOICE MODE LOGIC ---
         print(f"🟣 Voice mode received: {voice_mode}")
 
         VOICE_MODE_PHRASES = {
@@ -192,11 +192,9 @@ async def process_audio(
 
         log_chat(user_text, full_reply)
 
-        # === Clean reply for TTS only ===
-        cleaned_reply = clean_reply_for_tts(full_reply)
-        cleaned_reply = cleaned_reply[:400]  # Limit TTS to 400 chars
+        # === Clean reply for TTS only (ASCII, 400 char limit) ===
+        cleaned_reply = clean_reply_for_tts(full_reply)[:400]
 
-        # Generate audio file (ASCII only)
         audio_path = "juno_response.mp3"
         tts_result = generate_tts(cleaned_reply, output_path=audio_path)
         
@@ -206,15 +204,25 @@ async def process_audio(
                 "error": "❌ TTS generation failed."
             }, media_type="application/json")
         
+        # Always send JSON with reply if something goes wrong!
         return FileResponse(
             path=audio_path,
             media_type="audio/mpeg",
-            headers={"X-Reply": full_reply}
+            headers={"X-Reply": full_reply[:200] if full_reply else ""}
         )
         
     except Exception as e:
         print(f"❌ Server error: {e}")
         return JSONResponse(content={"reply": None, "error": str(e)}, media_type="application/json")
+
+# === UNIVERSAL EXCEPTION HANDLER ===
+@app.exception_handler(Exception)
+async def universal_exception_handler(request: Request, exc: Exception):
+    print(f"❌ [Universal Exception] {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"reply": None, "error": f"Server error: {str(exc)}"}
+    )
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=5020)
