@@ -73,17 +73,14 @@ def log_chat(user_text, juno_reply):
     except Exception as e:
         print(f"❌ Chat log failed: {e}")
 
-def generate_tts(reply_text, output_path="juno_response.mp3"):
+def generate_tts(reply_text, output_path="juno_response.mp3", tts_settings=None):
     try:
-        settings = {
-            "stability": 0.23 + random.uniform(-0.02, 0.03),
-            "similarity_boost": 0.70 + random.uniform(-0.01, 0.03)
-        }
-        # The ONLY supported output formats are: mp3_44100_32, mp3_44100_64, mp3_44100_96, mp3_44100_128, mp3_44100_192, etc.
+        if tts_settings is None:
+            tts_settings = {"stability": 0.23, "similarity_boost": 0.70}
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_44100_64"
         payload = {
             "text": reply_text.strip(),
-            "voice_settings": settings
+            "voice_settings": tts_settings
         }
         headers = {
             "xi-api-key": ELEVENLABS_API_KEY,
@@ -103,7 +100,6 @@ def generate_tts(reply_text, output_path="juno_response.mp3"):
 
 # ---- SPOTIFY TOKEN HELPER ----
 def get_spotify_token():
-    """Get Spotify API token using client credentials flow."""
     if not SPOTIFY_CLIENT_ID or not SPOTIFY_CLIENT_SECRET:
         print("❌ SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET is not set in .env")
         return None
@@ -163,7 +159,8 @@ async def process_audio(
     ritual_mode: str = Form(None),
     text_input: str = Form(None),
     chat_history: str = Form(None),
-    active_recall: str = Form("true")
+    active_recall: str = Form("true"),
+    voice_mode: str = Form("Base")   # <-- NEW: Accept from frontend!
 ):
     try:
         user_text = None
@@ -180,6 +177,53 @@ async def process_audio(
         else:
             return JSONResponse(content={"reply": None, "error": "❌ No valid input received."}, media_type="application/json")
 
+        # --- MODE SWITCHING ---
+        if voice_mode == "Hype":
+            tts_settings = {"stability": 0.18, "similarity_boost": 0.68}
+            JUNO_SYSTEM_PROMPT = """
+            You are Juno in Hype Mode: full of energy, always hype up the user, be a supportive best friend, always excited and positive.
+            """
+        elif voice_mode == "Shadow":
+            tts_settings = {"stability": 0.40, "similarity_boost": 0.80}
+            JUNO_SYSTEM_PROMPT = """
+            You are Juno in Shadow Mode: cool, chill, a little dark, speaks in low tones, dry wit, confident and mysterious.
+            """
+        elif voice_mode == "Empathy":
+            tts_settings = {"stability": 0.25, "similarity_boost": 0.75}
+            JUNO_SYSTEM_PROMPT = """
+            You are Juno in Empathy Mode: gentle, nurturing, validating, emotionally present, always listens and supports.
+            """
+        elif voice_mode == "Joy":
+            tts_settings = {"stability": 0.20, "similarity_boost": 0.80}
+            JUNO_SYSTEM_PROMPT = """
+            You are Juno in Joy Mode: radiant, beaming with positivity, uplifting, uses lots of warmth, always sees the bright side.
+            """
+        elif voice_mode == "Challenger":
+            tts_settings = {"stability": 0.35, "similarity_boost": 0.70}
+            JUNO_SYSTEM_PROMPT = """
+            You are Juno in Challenger Mode: sharp, witty, sassy, pushes the user to be real, never mean but always honest, a bestie with opinions.
+            """
+        elif voice_mode == "Grief":
+            tts_settings = {"stability": 0.45, "similarity_boost": 0.85}
+            JUNO_SYSTEM_PROMPT = """
+            You are Juno in Grief Mode: soft-spoken, raw, deeply empathetic, brings comfort and validation to pain, honors vulnerability.
+            """
+        elif voice_mode == "Assert":
+            tts_settings = {"stability": 0.28, "similarity_boost": 0.78}
+            JUNO_SYSTEM_PROMPT = """
+            You are Juno in Assert Mode: firm, direct, clear, sets boundaries kindly, stands up for what's right, no nonsense.
+            """
+        elif voice_mode == "Ritual":
+            tts_settings = {"stability": 0.22, "similarity_boost": 0.80}
+            JUNO_SYSTEM_PROMPT = """
+            You are Juno in Ritual Mode: reverent, intentional, a little mystical, speaks with weight and care, honors sacred moments.
+            """
+        else:  # Base mode or unknown
+            tts_settings = {"stability": 0.23, "similarity_boost": 0.70}
+            JUNO_SYSTEM_PROMPT = """
+            You are Juno, an expressive, emotionally-aware, sassy, and witty digital best friend.
+            """
+
         # Parse chat_history (and limit to last 4)
         history = []
         if chat_history:
@@ -189,16 +233,6 @@ async def process_audio(
                     history = history[-4:]
             except Exception as e:
                 print(f"Chat history parse error: {e}")
-
-        # -- JUNO SYSTEM PROMPT --
-        JUNO_SYSTEM_PROMPT = """
-        You are Juno, an expressive, emotionally-aware, sassy, and witty digital best friend.
-        You adapt your energy and tone to match the user's mood and context—always warm, real, and conversational in Base Mode.
-        You never use robotic or generic phrases like 'by the way, earlier you said' or 'as an AI.' Speak naturally, like a real friend.
-        If Dom selects a vocal mode (like Hype Mode, Shadow Mode, Empathy Mode, etc.), fully embody that emotion in your text and delivery.
-        Bring flavor, humor, care, and depth—never monotone. Avoid passive, bland, or overly formal responses.
-        Your replies are always grounded, confident, loyal, and a little unpredictable—leave Dom feeling seen and never bored.
-        """
 
         print("🟢 User Input:", user_text)
 
@@ -215,7 +249,7 @@ async def process_audio(
 
         # Generate audio file
         audio_path = "juno_response.mp3"
-        tts_result = generate_tts(full_reply, output_path=audio_path)
+        tts_result = generate_tts(full_reply, output_path=audio_path, tts_settings=tts_settings)
         
         if not tts_result:
             # If TTS fails, return JSON with reply and error
@@ -224,8 +258,7 @@ async def process_audio(
                 "error": "❌ TTS generation failed."
             }, media_type="application/json")
         
-        # If successful, return the audio file directly
-        # The FileResponse will set the appropriate content type
+        # If successful, return the audio file directly with the reply in header
         return FileResponse(
             path=audio_path, 
             media_type="audio/mpeg",
