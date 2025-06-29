@@ -3,6 +3,7 @@ import json
 import base64
 import requests
 import random
+import re
 from datetime import datetime
 from fastapi import FastAPI, UploadFile, Form
 from fastapi.responses import JSONResponse, FileResponse
@@ -67,6 +68,10 @@ def log_chat(user_text, juno_reply):
                 f.truncate()
     except Exception as e:
         print(f"❌ Chat log failed: {e}")
+
+def clean_reply_for_tts(reply):
+    # Remove all non-ASCII characters (including emojis)
+    return re.sub(r'[^\x00-\x7F]+', '', reply)
 
 def generate_tts(reply_text, output_path="juno_response.mp3"):
     try:
@@ -159,7 +164,6 @@ async def process_audio(
         }
 
         if not voice_mode or voice_mode.strip() in ["Base", "Default", "Auto"]:
-            # Juno's authentic, dynamic personality (real bestie energy)
             JUNO_SYSTEM_PROMPT = """
             You are Juno, Dom’s real-world digital best friend: quick-witted, honest, supportive, playful, loyal, emotionally aware, and sometimes unpredictable.
             You bring energy when the mood calls for it, comfort when Dom’s low, and always keep things real—never robotic or boring.
@@ -188,18 +192,20 @@ async def process_audio(
 
         log_chat(user_text, full_reply)
 
+        # === Clean reply for TTS ===
+        cleaned_reply = clean_reply_for_tts(full_reply)
+        cleaned_reply = cleaned_reply[:400]  # Limit TTS to 400 chars
+
         # Generate audio file
         audio_path = "juno_response.mp3"
-        tts_result = generate_tts(full_reply, output_path=audio_path)
+        tts_result = generate_tts(cleaned_reply, output_path=audio_path)
         
         if not tts_result:
-            # If TTS fails, return JSON with reply and error
             return JSONResponse(content={
                 "reply": full_reply,
                 "error": "❌ TTS generation failed."
             }, media_type="application/json")
         
-        # If successful, return the audio file directly
         return FileResponse(
             path=audio_path,
             media_type="audio/mpeg",
