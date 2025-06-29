@@ -54,17 +54,17 @@ def log_chat(user_text, juno_reply):
     }
     try:
         if not os.path.exists(CHAT_LOG_FILE):
-            with open(CHAT_LOG_FILE, "w") as f:
-                json.dump([log_entry], f, indent=4)
+            with open(CHAT_LOG_FILE, "w", encoding="utf-8") as f:
+                json.dump([log_entry], f, indent=4, ensure_ascii=False)
         else:
-            with open(CHAT_LOG_FILE, "r+") as f:
+            with open(CHAT_LOG_FILE, "r+", encoding="utf-8") as f:
                 try:
                     data = json.load(f)
                 except json.JSONDecodeError:
                     data = []
                 data.append(log_entry)
                 f.seek(0)
-                json.dump(data, f, indent=4)
+                json.dump(data, f, indent=4, ensure_ascii=False)
                 f.truncate()
     except Exception as e:
         print(f"❌ Chat log failed: {e}")
@@ -109,7 +109,7 @@ async def test():
 @app.get("/api/chat_history")
 async def chat_history():
     try:
-        with open(CHAT_LOG_FILE, "r") as f:
+        with open(CHAT_LOG_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
         return JSONResponse(content={"history": data}, media_type="application/json")
     except Exception as e:
@@ -192,11 +192,11 @@ async def process_audio(
 
         log_chat(user_text, full_reply)
 
-        # === Clean reply for TTS ===
+        # === Clean reply for TTS only ===
         cleaned_reply = clean_reply_for_tts(full_reply)
         cleaned_reply = cleaned_reply[:400]  # Limit TTS to 400 chars
 
-        # Generate audio file
+        # Generate audio file (ASCII only)
         audio_path = "juno_response.mp3"
         tts_result = generate_tts(cleaned_reply, output_path=audio_path)
         
