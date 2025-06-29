@@ -8,11 +8,9 @@ from datetime import datetime
 from fastapi import FastAPI, UploadFile, Form, Request
 from fastapi.responses import JSONResponse, FileResponse
 from dotenv import load_dotenv
-import openai
 import uvicorn
 
 load_dotenv()
-openai.api_key = os.getenv('OPENAI_API_KEY')
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
 voice_id = os.getenv('ELEVENLABS_VOICE_ID')
 
@@ -70,11 +68,9 @@ def log_chat(user_text, juno_reply):
         print(f"❌ Chat log failed: {e}")
 
 def clean_reply_for_tts(reply, max_len=400):
-    # Remove all non-ASCII characters (including emojis) for TTS
     cleaned = re.sub(r'[^\x00-\x7F]+', '', reply)
     if len(cleaned) <= max_len:
         return cleaned, False
-    # Try to truncate at the last period or sentence end within max_len
     cut = cleaned[:max_len]
     last_period = cut.rfind('. ')
     if last_period > 50:
@@ -108,6 +104,31 @@ def generate_tts(reply_text, output_path="juno_response.mp3"):
         print(f"❌ ElevenLabs TTS exception: {e}")
         return None
 
+def get_llama3_reply(prompt, chat_history=None):
+    """
+    Calls Ollama's Llama 3 model running locally.
+    If chat_history is provided, concatenate it for more context.
+    """
+    model = "llama3"  # or "llama3:8b" etc
+    full_prompt = prompt
+    if chat_history:
+        # Combine history into a single prompt (optional, simple version)
+        chat_history_text = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in chat_history])
+        full_prompt = f"{chat_history_text}\nUser: {prompt}"
+    payload = {
+        "model": model,
+        "prompt": full_prompt,
+        "stream": False
+    }
+    try:
+        resp = requests.post("http://localhost:11434/api/generate", json=payload, timeout=120)
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("response", "").strip()
+    except Exception as e:
+        print(f"❌ Llama3/Ollama error: {e}")
+        return "Sorry, something went wrong talking to Llama 3."
+
 app = FastAPI()
 
 @app.get("/api/test")
@@ -138,9 +159,10 @@ async def process_audio(
             contents = await audio.read()
             with open('temp_audio.m4a', 'wb') as f:
                 f.write(contents)
-            with open('temp_audio.m4a', 'rb') as audio_file:
-                transcript = openai.Audio.transcribe("whisper-1", audio_file, timeout=30)
-            user_text = transcript['text']
+            # ------ Whisper (optional, update if local Whisper desired) ------
+            # Replace this if you want local Whisper. For now, just stub:
+            user_text = "[Voice transcription is not implemented here]"
+            # If you want, plug in Whisper here and set user_text
         elif text_input:
             user_text = text_input
         else:
@@ -185,13 +207,21 @@ async def process_audio(
 
         print("🟢 User Input:", user_text)
 
+        # Prepare chat context for Llama 3:
         messages = [{"role": "system", "content": JUNO_SYSTEM_PROMPT}] + history + [{"role": "user", "content": user_text}]
-        chat_resp = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=messages,
-            temperature=1.0
-        )
-        gpt_reply = chat_resp.choices[0].message['content'].strip()
+        # Llama3 doesn’t use the OpenAI chat format—combine into prompt
+        chat_history_for_prompt = []
+        for m in messages:
+            if m["role"] == "system":
+                chat_history_for_prompt.append(f"Instructions: {m['content']}")
+            elif m["role"] == "user":
+                chat_history_for_prompt.append(f"User: {m['content']}")
+            elif m["role"] == "assistant":
+                chat_history_for_prompt.append(f"Juno: {m['content']}")
+        prompt = "\n".join(chat_history_for_prompt)
+
+        # --- Llama 3 reply (via Ollama API) ---
+        gpt_reply = get_llama3_reply(prompt)
         full_reply = gpt_reply
 
         log_chat(user_text, full_reply)
