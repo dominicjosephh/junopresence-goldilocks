@@ -69,9 +69,17 @@ def log_chat(user_text, juno_reply):
     except Exception as e:
         print(f"❌ Chat log failed: {e}")
 
-def clean_reply_for_tts(reply):
+def clean_reply_for_tts(reply, max_len=400):
     # Remove all non-ASCII characters (including emojis) for TTS
-    return re.sub(r'[^\x00-\x7F]+', '', reply)
+    cleaned = re.sub(r'[^\x00-\x7F]+', '', reply)
+    if len(cleaned) <= max_len:
+        return cleaned, False
+    # Try to truncate at the last period or sentence end within max_len
+    cut = cleaned[:max_len]
+    last_period = cut.rfind('. ')
+    if last_period > 50:
+        return cut[:last_period+1], True
+    return cut, True
 
 def generate_tts(reply_text, output_path="juno_response.mp3"):
     try:
@@ -126,7 +134,6 @@ async def process_audio(
 ):
     try:
         user_text = None
-        # Transcribe or accept text input
         if audio:
             contents = await audio.read()
             with open('temp_audio.m4a', 'wb') as f:
@@ -148,9 +155,6 @@ async def process_audio(
                     history = history[-4:]
             except Exception as e:
                 print(f"Chat history parse error: {e}")
-
-        # --- PERSONALITY/VOICE MODE LOGIC ---
-        print(f"🟣 Voice mode received: {voice_mode}")
 
         VOICE_MODE_PHRASES = {
             "Sassy":   "You are playful, sharp, quick-witted, and throw fun shade, but never sound like a customer service bot.",
@@ -192,8 +196,8 @@ async def process_audio(
 
         log_chat(user_text, full_reply)
 
-        # === Clean reply for TTS only (ASCII, 400 char limit) ===
-        cleaned_reply = clean_reply_for_tts(full_reply)[:400]
+        # Truncate and clean reply for TTS
+        cleaned_reply, was_truncated = clean_reply_for_tts(full_reply, max_len=400)
 
         audio_path = "juno_response.mp3"
         tts_result = generate_tts(cleaned_reply, output_path=audio_path)
@@ -201,14 +205,18 @@ async def process_audio(
         if not tts_result:
             return JSONResponse(content={
                 "reply": full_reply,
-                "error": "❌ TTS generation failed."
+                "error": "❌ TTS generation failed.",
+                "truncated": was_truncated
             }, media_type="application/json")
         
         # Always send JSON with reply if something goes wrong!
         return FileResponse(
             path=audio_path,
             media_type="audio/mpeg",
-            headers={"X-Reply": full_reply[:200] if full_reply else ""}
+            headers={
+                "X-Reply": full_reply[:200] if full_reply else "",
+                "X-TTS-Truncated": str(was_truncated)
+            }
         )
         
     except Exception as e:
