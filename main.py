@@ -6,7 +6,8 @@ import random
 import re
 from datetime import datetime
 from fastapi import FastAPI, UploadFile, Form, Request
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 import uvicorn
 
@@ -17,6 +18,12 @@ voice_id = os.getenv('ELEVENLABS_VOICE_ID')
 MEMORY_FILE = 'memory.json'
 FACTS_LIMIT = 20
 CHAT_LOG_FILE = "chat_log.json"
+AUDIO_DIR = "static"
+AUDIO_FILENAME = "juno_response.mp3"
+AUDIO_PATH = os.path.join(AUDIO_DIR, AUDIO_FILENAME)
+
+# Ensure static folder exists
+os.makedirs(AUDIO_DIR, exist_ok=True)
 
 def load_memory():
     if not os.path.exists(MEMORY_FILE):
@@ -84,7 +91,7 @@ def clean_reply_for_tts(reply, max_len=400):
         return cut[:last_period+1], True
     return cut, True
 
-def generate_tts(reply_text, output_path="juno_response.mp3"):
+def generate_tts(reply_text, output_path=AUDIO_PATH):
     try:
         settings = {
             "stability": 0.23 + random.uniform(-0.02, 0.03),
@@ -112,14 +119,9 @@ def generate_tts(reply_text, output_path="juno_response.mp3"):
         return None
 
 def get_llama3_reply(prompt, chat_history=None):
-    """
-    Calls Ollama's Llama 3 model running locally.
-    If chat_history is provided, concatenate it for more context.
-    """
-    model = "llama3"  # or "llama3:8b" etc
+    model = "llama3"  # or "llama3:8b"
     full_prompt = prompt
     if chat_history:
-        # Combine history into a single prompt (optional, simple version)
         chat_history_text = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in chat_history])
         full_prompt = f"{chat_history_text}\nUser: {prompt}"
     payload = {
@@ -137,6 +139,9 @@ def get_llama3_reply(prompt, chat_history=None):
         return "Sorry, something went wrong talking to Llama 3."
 
 app = FastAPI()
+
+# Mount static directory to serve audio files
+app.mount("/static", StaticFiles(directory=AUDIO_DIR), name="static")
 
 @app.get("/api/test")
 async def test():
@@ -166,10 +171,8 @@ async def process_audio(
             contents = await audio.read()
             with open('temp_audio.m4a', 'wb') as f:
                 f.write(contents)
-            # ------ Whisper (optional, update if local Whisper desired) ------
-            # Replace this if you want local Whisper. For now, just stub:
+            # Replace with actual Whisper transcription if desired
             user_text = "[Voice transcription is not implemented here]"
-            # If you want, plug in Whisper here and set user_text
         elif text_input:
             user_text = text_input
         else:
@@ -220,7 +223,6 @@ async def process_audio(
 
         # Prepare chat context for Llama 3:
         messages = [{"role": "system", "content": full_system_prompt}] + history + [{"role": "user", "content": user_text}]
-        # Llama3 doesn’t use the OpenAI chat format—combine into prompt cleanly
         chat_history_for_prompt = []
         for m in messages:
             if m["role"] == "system":
@@ -240,28 +242,28 @@ async def process_audio(
         # Truncate and clean reply for TTS
         cleaned_reply, was_truncated = clean_reply_for_tts(full_reply, max_len=400)
 
-        audio_path = "juno_response.mp3"
-        tts_result = generate_tts(cleaned_reply, output_path=audio_path)
-        
+        tts_result = generate_tts(cleaned_reply, output_path=AUDIO_PATH)
+
         if not tts_result:
             return JSONResponse(content={
                 "reply": full_reply,
-                "error": "❌ TTS generation failed.",
-                "truncated": was_truncated
+                "audio_url": None,
+                "truncated": was_truncated,
+                "error": "❌ TTS generation failed."
             }, media_type="application/json")
 
-        # ---- FIXED: Only send safe headers! ----
-        return FileResponse(
-            path=audio_path,
-            media_type="audio/mpeg",
-            headers={
-                "X-TTS-Truncated": str(was_truncated)
-            }
-        )
-        
+        # Return JSON with reply and audio url (not FileResponse!)
+        audio_url = f"/static/{AUDIO_FILENAME}"
+        return JSONResponse(content={
+            "reply": full_reply,
+            "audio_url": audio_url,
+            "truncated": was_truncated,
+            "error": None
+        }, media_type="application/json")
+
     except Exception as e:
         print(f"❌ Server error: {e}")
-        return JSONResponse(content={"reply": None, "error": str(e)}, media_type="application/json")
+        return JSONResponse(content={"reply": None, "audio_url": None, "error": str(e)}, media_type="application/json")
 
 # === UNIVERSAL EXCEPTION HANDLER ===
 @app.exception_handler(Exception)
@@ -269,7 +271,7 @@ async def universal_exception_handler(request: Request, exc: Exception):
     print(f"❌ [Universal Exception] {exc}")
     return JSONResponse(
         status_code=500,
-        content={"reply": None, "error": f"Server error: {str(exc)}"}
+        content={"reply": None, "audio_url": None, "error": f"Server error: {str(exc)}"}
     )
 
 if __name__ == "__main__":
