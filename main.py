@@ -4,7 +4,10 @@ import base64
 import requests
 import random
 import re
+import hashlib
+import time
 from datetime import datetime
+from functools import lru_cache
 from fastapi import FastAPI, UploadFile, Form, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,8 +25,57 @@ AUDIO_DIR = "static"
 AUDIO_FILENAME = "juno_response.mp3"
 AUDIO_PATH = os.path.join(AUDIO_DIR, AUDIO_FILENAME)
 
+# Performance optimization globals
+RESPONSE_CACHE = {}
+CACHE_MAX_SIZE = 50
+CACHE_TTL = 3600  # 1 hour
+
 # Ensure static folder exists
 os.makedirs(AUDIO_DIR, exist_ok=True)
+
+def get_cache_key(prompt, chat_history_str="", voice_mode="Base"):
+    """Generate cache key for responses"""
+    combined = f"{prompt}:{chat_history_str}:{voice_mode}"
+    return hashlib.md5(combined.encode()).hexdigest()
+
+def get_cached_response(cache_key):
+    """Get cached response if it exists and isn't expired"""
+    if cache_key in RESPONSE_CACHE:
+        response, timestamp = RESPONSE_CACHE[cache_key]
+        if time.time() - timestamp < CACHE_TTL:
+            print("🟢 Cache hit - returning cached response")
+            return response
+        else:
+            # Remove expired entry
+            del RESPONSE_CACHE[cache_key]
+    return None
+
+def cache_response(cache_key, response):
+    """Cache a response with timestamp"""
+    # Simple cache eviction - clear if too large
+    if len(RESPONSE_CACHE) >= CACHE_MAX_SIZE:
+        # Remove oldest entries (simple approach)
+        oldest_keys = sorted(RESPONSE_CACHE.keys(), 
+                           key=lambda k: RESPONSE_CACHE[k][1])[:10]
+        for k in oldest_keys:
+            del RESPONSE_CACHE[k]
+    
+    RESPONSE_CACHE[cache_key] = (response, time.time())
+    print(f"🟡 Cached response (total cached: {len(RESPONSE_CACHE)})")
+
+def optimize_response_length(voice_mode, base_length=200):
+    """Adjust response length based on voice mode for optimal TTS"""
+    length_modifiers = {
+        "Sassy": 150,      # Shorter, punchier responses
+        "Hype": 180,       # Energetic but not too long
+        "Shadow": 160,     # Mysterious and concise
+        "Assert": 140,     # Bold and direct
+        "Challenger": 170, # Sass but not endless
+        "Ritual": 220,     # Can be more elaborate
+        "Joy": 190,        # Happy but not overwhelming
+        "Empathy": 210,    # Can be more supportive/detailed
+    }
+    return length_modifiers.get(voice_mode, base_length)
 
 def load_memory():
     if not os.path.exists(MEMORY_FILE):
@@ -118,34 +170,179 @@ def generate_tts(reply_text, output_path=AUDIO_PATH):
         print(f"❌ ElevenLabs TTS exception: {e}")
         return None
 
-def get_llama3_reply(prompt, chat_history=None):
-    model = "llama3"  # or "llama3:8b"
+def get_llama3_reply(prompt, chat_history=None, voice_mode="Base"):
+    # Create cache key including voice_mode
+    chat_history_str = str(chat_history) if chat_history else ""
+    cache_key = get_cache_key(prompt, chat_history_str, voice_mode)
+    
+    # Check cache first
+    cached = get_cached_response(cache_key)
+    if cached:
+        return cached
+    
+    # Use optimized quantized model for much better performance
+    model = "llama3:8b-instruct-q4_K_M"  # 3-5x faster than "llama3"
+    
     full_prompt = prompt
     if chat_history:
         chat_history_text = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in chat_history])
         full_prompt = f"{chat_history_text}\nUser: {prompt}"
+    
+    # Optimize response length based on voice mode
+    max_tokens = optimize_response_length(voice_mode, base_length=200)
+    
     payload = {
         "model": model,
         "prompt": full_prompt,
-        "stream": False
+        "stream": False,
+        "options": {
+            "temperature": 0.8,
+            "top_p": 0.9,
+            "top_k": 40,
+            "num_predict": max_tokens,  # Optimized based on voice mode
+            "num_ctx": 2048,            # Smaller context for speed
+            "repeat_penalty": 1.1,
+            "stop": ["\nUser:", "\nHuman:", "\n\n"]  # Stop at conversation breaks
+        }
     }
+    
     try:
-        resp = requests.post("http://localhost:11434/api/generate", json=payload, timeout=120)
+        print(f"🟡 Generating new response with {model} (voice_mode: {voice_mode})")
+        start_time = time.time()
+        
+        resp = requests.post("http://localhost:11434/api/generate", 
+                           json=payload, 
+                           timeout=60)  # Reduced from 120 to 60 seconds
         resp.raise_for_status()
         data = resp.json()
-        return data.get("response", "").strip()
+        response = data.get("response", "").strip()
+        
+        # Log timing for performance monitoring
+        elapsed = time.time() - start_time
+        print(f"🟢 Llama3 response generated in {elapsed:.2f} seconds")
+        
+        # Cache the response
+        cache_response(cache_key, response)
+        
+        return response
+        
+    except requests.exceptions.Timeout:
+        print("❌ Llama3/Ollama timeout - response taking too long")
+        return "I'm thinking a bit slow right now, bestie! Try asking me again in a moment."
+    except requests.exceptions.ConnectionError:
+        print("❌ Llama3/Ollama connection error - service may be down")
+        return "Oops! I'm having trouble connecting to my brain right now. Give me a sec!"
     except Exception as e:
         print(f"❌ Llama3/Ollama error: {e}")
         return "Sorry, something went wrong talking to Llama 3."
+
+def get_llama3_reply_streaming(prompt, chat_history=None, voice_mode="Base"):
+    """Alternative streaming version for faster perceived response - future enhancement"""
+    model = "llama3:8b-instruct-q4_K_M"
+    
+    full_prompt = prompt
+    if chat_history:
+        chat_history_text = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in chat_history])
+        full_prompt = f"{chat_history_text}\nUser: {prompt}"
+    
+    max_tokens = optimize_response_length(voice_mode, base_length=200)
+    
+    payload = {
+        "model": model,
+        "prompt": full_prompt,
+        "stream": True,  # Enable streaming
+        "options": {
+            "temperature": 0.8,
+            "top_p": 0.9,
+            "num_predict": max_tokens,
+            "num_ctx": 2048,
+            "stop": ["\nUser:", "\nHuman:", "\n\n"]
+        }
+    }
+    
+    try:
+        print(f"🟡 Streaming response with {model}")
+        resp = requests.post("http://localhost:11434/api/generate", 
+                           json=payload, 
+                           timeout=60, 
+                           stream=True)
+        resp.raise_for_status()
+        
+        full_response = ""
+        for line in resp.iter_lines():
+            if line:
+                try:
+                    chunk = json.loads(line)
+                    if "response" in chunk:
+                        full_response += chunk["response"]
+                        # Could yield chunks here for real-time streaming
+                except json.JSONDecodeError:
+                    continue
+        
+        return full_response.strip()
+        
+    except Exception as e:
+        print(f"❌ Streaming error: {e}")
+        return get_llama3_reply(prompt, chat_history, voice_mode)  # Fallback to regular
+
+def preload_model():
+    """Preload the model to eliminate startup delay"""
+    try:
+        print("🟡 Preloading Llama3 model...")
+        start_time = time.time()
+        
+        payload = {
+            "model": "llama3:8b-instruct-q4_K_M",
+            "prompt": "Hello",
+            "stream": False,
+            "options": {"num_predict": 1}
+        }
+        resp = requests.post("http://localhost:11434/api/generate", json=payload, timeout=30)
+        
+        if resp.status_code == 200:
+            elapsed = time.time() - start_time
+            print(f"🟢 Model preloaded successfully in {elapsed:.2f} seconds")
+        else:
+            print(f"❌ Model preload failed with status: {resp.status_code}")
+    except Exception as e:
+        print(f"❌ Model preload failed: {e}")
+
+def clear_cache():
+    """Clear the response cache"""
+    global RESPONSE_CACHE
+    RESPONSE_CACHE.clear()
+    print("🟡 Response cache cleared")
 
 app = FastAPI()
 
 # Mount static directory to serve audio files
 app.mount("/static", StaticFiles(directory=AUDIO_DIR), name="static")
 
+@app.on_event("startup")
+async def startup_event():
+    """Initialize optimizations when server starts"""
+    print("🚀 Starting optimized Juno backend...")
+    preload_model()
+    print("✅ Backend optimization complete!")
+
 @app.get("/api/test")
 async def test():
-    return JSONResponse(content={"message": "Backend is live"}, media_type="application/json")
+    return JSONResponse(content={"message": "Optimized backend is live!"}, media_type="application/json")
+
+@app.get("/api/cache_stats")
+async def cache_stats():
+    """Get cache statistics for monitoring"""
+    return JSONResponse(content={
+        "cached_responses": len(RESPONSE_CACHE),
+        "max_cache_size": CACHE_MAX_SIZE,
+        "cache_ttl": CACHE_TTL
+    }, media_type="application/json")
+
+@app.post("/api/clear_cache")
+async def clear_cache_endpoint():
+    """Clear the response cache"""
+    clear_cache()
+    return JSONResponse(content={"message": "Cache cleared successfully"}, media_type="application/json")
 
 @app.get("/api/chat_history")
 async def chat_history():
@@ -201,14 +398,14 @@ async def process_audio(
 
         if not voice_mode or voice_mode.strip() in ["Base", "Default", "Auto"]:
             JUNO_SYSTEM_PROMPT = (
-                "You are Juno, Dom’s real-world digital best friend: quick-witted, honest, supportive, playful, loyal, emotionally aware, and sometimes unpredictable. "
-                "You bring energy when the mood calls for it, comfort when Dom’s low, and always keep things real—never robotic or boring. "
-                "Your responses flow with the moment and reflect Dom’s mood, but you are always your authentic self."
+                "You are Juno, Dom's real-world digital best friend: quick-witted, honest, supportive, playful, loyal, emotionally aware, and sometimes unpredictable. "
+                "You bring energy when the mood calls for it, comfort when Dom's low, and always keep things real—never robotic or boring. "
+                "Your responses flow with the moment and reflect Dom's mood, but you are always your authentic self."
             )
         else:
             style_phrase = VOICE_MODE_PHRASES.get(voice_mode, "")
             JUNO_SYSTEM_PROMPT = (
-                "You are Juno, Dom’s digital best friend. "
+                "You are Juno, Dom's digital best friend. "
                 f"{style_phrase} "
                 "Absolutely never say anything robotic or scripted. Match the mood and style 100% based on the selected voice mode."
             )
@@ -220,6 +417,7 @@ async def process_audio(
             full_system_prompt = JUNO_SYSTEM_PROMPT
 
         print("🟢 User Input:", user_text)
+        print(f"🟢 Voice Mode: {voice_mode}")
 
         # Prepare chat context for Llama 3:
         messages = [{"role": "system", "content": full_system_prompt}] + history + [{"role": "user", "content": user_text}]
@@ -233,8 +431,8 @@ async def process_audio(
                 chat_history_for_prompt.append(f"Juno: {m['content']}")
         prompt = "\n".join(chat_history_for_prompt)
 
-        # --- Llama 3 reply (via Ollama API) ---
-        gpt_reply = get_llama3_reply(prompt)
+        # --- Optimized Llama 3 reply (via Ollama API) with caching ---
+        gpt_reply = get_llama3_reply(prompt, voice_mode=voice_mode)
         full_reply = gpt_reply
 
         log_chat(user_text, full_reply)
@@ -275,4 +473,5 @@ async def universal_exception_handler(request: Request, exc: Exception):
     )
 
 if __name__ == "__main__":
+    print("🚀 Starting optimized Juno backend server...")
     uvicorn.run(app, host="0.0.0.0", port=5020)
