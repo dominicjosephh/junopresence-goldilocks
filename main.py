@@ -14,9 +14,16 @@ from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 import uvicorn
 
+# Import our music command parser
+from music_command_parser import MusicCommandParser, SpotifyController, MusicIntent
+
 load_dotenv()
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
 voice_id = os.getenv('ELEVENLABS_VOICE_ID')
+
+# Add Spotify credentials
+SPOTIFY_CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
+SPOTIFY_CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
 
 MEMORY_FILE = 'memory.json'
 FACTS_LIMIT = 20
@@ -29,6 +36,10 @@ AUDIO_PATH = os.path.join(AUDIO_DIR, AUDIO_FILENAME)
 RESPONSE_CACHE = {}
 CACHE_MAX_SIZE = 50
 CACHE_TTL = 3600  # 1 hour
+
+# Initialize music intelligence
+music_parser = MusicCommandParser()
+spotify_controller = SpotifyController(SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET)
 
 # Ensure static folder exists
 os.makedirs(AUDIO_DIR, exist_ok=True)
@@ -55,13 +66,179 @@ def cache_response(cache_key, response):
     # Simple cache eviction - clear if too large
     if len(RESPONSE_CACHE) >= CACHE_MAX_SIZE:
         # Remove oldest entries (simple approach)
-        oldest_keys = sorted(RESPONSE_CACHE.keys(), 
+        oldest_keys = sorted(RESPONSE_CACHE.keys(),
                            key=lambda k: RESPONSE_CACHE[k][1])[:10]
         for k in oldest_keys:
             del RESPONSE_CACHE[k]
     
     RESPONSE_CACHE[cache_key] = (response, time.time())
     print(f"🟡 Cached response (total cached: {len(RESPONSE_CACHE)})")
+
+def is_music_command(text: str) -> bool:
+    """Check if the text is a music-related command"""
+    music_keywords = [
+        "play", "pause", "stop", "skip", "next", "previous", "music", 
+        "song", "artist", "album", "playlist", "spotify", "volume",
+        "shuffle", "repeat", "by", "put on", "start", "resume"
+    ]
+    text_lower = text.lower()
+    return any(keyword in text_lower for keyword in music_keywords)
+
+def process_music_command(user_text: str, spotify_access_token: str = None) -> dict:
+    """Process a music command and return structured response"""
+    try:
+        # Parse the command
+        command = music_parser.parse_command(user_text)
+        print(f"🎵 Parsed music command: {command}")
+        
+        if command.intent == MusicIntent.UNKNOWN:
+            return {
+                "success": False,
+                "message": "I didn't understand that music command. Try saying something like 'play Training Season by Dua Lipa'",
+                "command": None
+            }
+        
+        # If no Spotify token, return instructions
+        if not spotify_access_token:
+            return {
+                "success": False,
+                "message": "I need access to your Spotify account to control music. Please connect Spotify first!",
+                "command": command.__dict__,
+                "requires_spotify_auth": True
+            }
+        
+        # Execute the command based on intent
+        if command.intent == MusicIntent.PLAY_SPECIFIC:
+            # Search for specific song
+            search_query = f"{command.song} {command.artist}" if command.artist else command.song
+            track = spotify_controller.search_track(search_query, spotify_access_token)
+            
+            if track:
+                success = spotify_controller.play_track(track["uri"], spotify_access_token)
+                if success:
+                    return {
+                        "success": True,
+                        "message": f"Now playing '{track['name']}' by {track['artists'][0]['name']}! 🎵",
+                        "track": {
+                            "name": track["name"],
+                            "artist": track["artists"][0]["name"],
+                            "uri": track["uri"]
+                        },
+                        "command": command.__dict__
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "message": "Found the song but couldn't play it. Make sure Spotify is open and active!",
+                        "command": command.__dict__
+                    }
+            else:
+                return {
+                    "success": False,
+                    "message": f"Couldn't find '{command.song}' by {command.artist}. Try a different search or check the spelling!",
+                    "command": command.__dict__
+                }
+        
+        elif command.intent == MusicIntent.PLAY_ARTIST:
+            # Search for artist and play top tracks
+            artist = spotify_controller.search_artist(command.artist, spotify_access_token)
+            
+            if artist:
+                success = spotify_controller.play_artist(artist["uri"], spotify_access_token)
+                if success:
+                    return {
+                        "success": True,
+                        "message": f"Playing music by {artist['name']}! 🎵",
+                        "artist": {
+                            "name": artist["name"],
+                            "uri": artist["uri"]
+                        },
+                        "command": command.__dict__
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "message": f"Found {artist['name']} but couldn't start playback. Make sure Spotify is active!",
+                        "command": command.__dict__
+                    }
+            else:
+                return {
+                    "success": False,
+                    "message": f"Couldn't find the artist '{command.artist}'. Try a different name!",
+                    "command": command.__dict__
+                }
+        
+        elif command.intent == MusicIntent.CONTROL:
+            # Handle playback control
+            success = spotify_controller.control_playback(command.control_action, spotify_access_token)
+            
+            if success:
+                action_messages = {
+                    "pause": "Music paused! ⏸️",
+                    "skip": "Skipped to the next track! ⏭️",
+                    "previous": "Playing the previous track! ⏮️"
+                }
+                message = action_messages.get(command.control_action, f"Applied {command.control_action}!")
+                return {
+                    "success": True,
+                    "message": message,
+                    "command": command.__dict__
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": f"Couldn't {command.control_action} the music. Make sure Spotify is active!",
+                    "command": command.__dict__
+                }
+        
+        elif command.intent == MusicIntent.PLAY_MOOD:
+            # Handle mood-based requests (simplified for now)
+            mood_queries = {
+                "happy": "happy pop upbeat",
+                "sad": "sad emotional ballad",
+                "chill": "chill ambient relaxed",
+                "workout": "workout gym high energy",
+                "party": "party dance electronic",
+                "focus": "instrumental focus ambient"
+            }
+            
+            query = mood_queries.get(command.mood, "popular music")
+            track = spotify_controller.search_track(query, spotify_access_token)
+            
+            if track:
+                success = spotify_controller.play_track(track["uri"], spotify_access_token)
+                if success:
+                    return {
+                        "success": True,
+                        "message": f"Playing some {command.mood} music for you! 🎵",
+                        "track": {
+                            "name": track["name"],
+                            "artist": track["artists"][0]["name"]
+                        },
+                        "command": command.__dict__
+                    }
+            
+            return {
+                "success": False,
+                "message": f"Couldn't find good {command.mood} music right now. Try being more specific!",
+                "command": command.__dict__
+            }
+        
+        else:
+            return {
+                "success": False,
+                "message": "I understand that's a music command, but I'm not sure how to handle it yet!",
+                "command": command.__dict__
+            }
+            
+    except Exception as e:
+        print(f"❌ Music command processing error: {e}")
+        return {
+            "success": False,
+            "message": "Something went wrong processing your music command. Try again!",
+            "error": str(e),
+            "command": None
+        }
 
 def optimize_response_length(voice_mode, base_length=200):
     """Adjust response length based on voice mode for optimal TTS"""
@@ -210,8 +387,8 @@ def get_llama3_reply(prompt, chat_history=None, voice_mode="Base"):
         print(f"🟡 Generating new response with {model} (voice_mode: {voice_mode})")
         start_time = time.time()
         
-        resp = requests.post("http://localhost:11434/api/generate", 
-                           json=payload, 
+        resp = requests.post("http://localhost:11434/api/generate",
+                           json=payload,
                            timeout=60)  # Reduced from 120 to 60 seconds
         resp.raise_for_status()
         data = resp.json()
@@ -235,55 +412,6 @@ def get_llama3_reply(prompt, chat_history=None, voice_mode="Base"):
     except Exception as e:
         print(f"❌ Llama3/Ollama error: {e}")
         return "Sorry, something went wrong talking to Llama 3."
-
-def get_llama3_reply_streaming(prompt, chat_history=None, voice_mode="Base"):
-    """Alternative streaming version for faster perceived response - future enhancement"""
-    model = "llama3:8b-instruct-q4_K_M"
-    
-    full_prompt = prompt
-    if chat_history:
-        chat_history_text = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in chat_history])
-        full_prompt = f"{chat_history_text}\nUser: {prompt}"
-    
-    max_tokens = optimize_response_length(voice_mode, base_length=200)
-    
-    payload = {
-        "model": model,
-        "prompt": full_prompt,
-        "stream": True,  # Enable streaming
-        "options": {
-            "temperature": 0.8,
-            "top_p": 0.9,
-            "num_predict": max_tokens,
-            "num_ctx": 2048,
-            "stop": ["\nUser:", "\nHuman:", "\n\n"]
-        }
-    }
-    
-    try:
-        print(f"🟡 Streaming response with {model}")
-        resp = requests.post("http://localhost:11434/api/generate", 
-                           json=payload, 
-                           timeout=60, 
-                           stream=True)
-        resp.raise_for_status()
-        
-        full_response = ""
-        for line in resp.iter_lines():
-            if line:
-                try:
-                    chunk = json.loads(line)
-                    if "response" in chunk:
-                        full_response += chunk["response"]
-                        # Could yield chunks here for real-time streaming
-                except json.JSONDecodeError:
-                    continue
-        
-        return full_response.strip()
-        
-    except Exception as e:
-        print(f"❌ Streaming error: {e}")
-        return get_llama3_reply(prompt, chat_history, voice_mode)  # Fallback to regular
 
 def preload_model():
     """Preload the model to eliminate startup delay"""
@@ -321,13 +449,13 @@ app.mount("/static", StaticFiles(directory=AUDIO_DIR), name="static")
 @app.on_event("startup")
 async def startup_event():
     """Initialize optimizations when server starts"""
-    print("🚀 Starting optimized Juno backend...")
+    print("🚀 Starting optimized Juno backend with music AI...")
     preload_model()
     print("✅ Backend optimization complete!")
 
 @app.get("/api/test")
 async def test():
-    return JSONResponse(content={"message": "Optimized backend is live!"}, media_type="application/json")
+    return JSONResponse(content={"message": "Optimized backend with music AI is live!"}, media_type="application/json")
 
 @app.get("/api/cache_stats")
 async def cache_stats():
@@ -360,7 +488,8 @@ async def process_audio(
     text_input: str = Form(None),
     chat_history: str = Form(None),
     active_recall: str = Form("true"),
-    voice_mode: str = Form("Base")
+    voice_mode: str = Form("Base"),
+    spotify_access_token: str = Form(None)  # Add Spotify token
 ):
     try:
         user_text = None
@@ -385,6 +514,47 @@ async def process_audio(
             except Exception as e:
                 print(f"Chat history parse error: {e}")
 
+        # 🎵 MUSIC INTELLIGENCE CHECK 🎵
+        if is_music_command(user_text):
+            print(f"🎵 Detected music command: {user_text}")
+            music_result = process_music_command(user_text, spotify_access_token)
+            
+            if music_result["success"]:
+                # Music command succeeded - return success message
+                full_reply = music_result["message"]
+                
+                # Add some Juno personality to the response
+                if voice_mode == "Sassy":
+                    full_reply += " Hope you like my taste in music! 😏"
+                elif voice_mode == "Hype":
+                    full_reply += " LET'S GO! This is gonna be fire! 🔥"
+                elif voice_mode == "Empathy":
+                    full_reply += " I hope this music brings you some joy! 💜"
+                
+                log_chat(user_text, full_reply)
+                
+                # Generate TTS and return
+                cleaned_reply, was_truncated = clean_reply_for_tts(full_reply, max_len=400)
+                tts_result = generate_tts(cleaned_reply, output_path=AUDIO_PATH)
+                
+                audio_url = f"/static/{AUDIO_FILENAME}" if tts_result else None
+                return JSONResponse(content={
+                    "reply": full_reply,
+                    "audio_url": audio_url,
+                    "truncated": was_truncated,
+                    "music_command": True,
+                    "music_result": music_result,
+                    "error": None
+                }, media_type="application/json")
+            
+            else:
+                # Music command failed - let Juno explain what went wrong
+                error_context = f"The user tried to use a music command but it failed: {music_result['message']}"
+                system_prompt_addition = f"\n\nIMPORTANT: {error_context}. Respond helpfully about the music issue."
+        else:
+            system_prompt_addition = ""
+
+        # Regular conversation handling (non-music or failed music commands)
         VOICE_MODE_PHRASES = {
             "Sassy":   "You are playful, sharp, quick-witted, and throw fun shade, but never sound like a customer service bot.",
             "Empathy": "Respond with warmth, compassion, and gentle encouragement—real, not cliche.",
@@ -400,21 +570,23 @@ async def process_audio(
             JUNO_SYSTEM_PROMPT = (
                 "You are Juno, Dom's real-world digital best friend: quick-witted, honest, supportive, playful, loyal, emotionally aware, and sometimes unpredictable. "
                 "You bring energy when the mood calls for it, comfort when Dom's low, and always keep things real—never robotic or boring. "
-                "Your responses flow with the moment and reflect Dom's mood, but you are always your authentic self."
+                "Your responses flow with the moment and reflect Dom's mood, but you are always your authentic self. "
+                "You can also control Dom's Spotify music when asked!"
             )
         else:
             style_phrase = VOICE_MODE_PHRASES.get(voice_mode, "")
             JUNO_SYSTEM_PROMPT = (
                 "You are Juno, Dom's digital best friend. "
                 f"{style_phrase} "
-                "Absolutely never say anything robotic or scripted. Match the mood and style 100% based on the selected voice mode."
+                "Absolutely never say anything robotic or scripted. Match the mood and style 100% based on the selected voice mode. "
+                "You can also control Dom's Spotify music when asked!"
             )
 
         memory_context = get_memory_context()
         if memory_context:
-            full_system_prompt = f"{JUNO_SYSTEM_PROMPT}\n\n{memory_context}"
+            full_system_prompt = f"{JUNO_SYSTEM_PROMPT}\n\n{memory_context}{system_prompt_addition}"
         else:
-            full_system_prompt = JUNO_SYSTEM_PROMPT
+            full_system_prompt = f"{JUNO_SYSTEM_PROMPT}{system_prompt_addition}"
 
         print("🟢 User Input:", user_text)
         print(f"🟢 Voice Mode: {voice_mode}")
@@ -456,6 +628,7 @@ async def process_audio(
             "reply": full_reply,
             "audio_url": audio_url,
             "truncated": was_truncated,
+            "music_command": False,
             "error": None
         }, media_type="application/json")
 
@@ -473,5 +646,5 @@ async def universal_exception_handler(request: Request, exc: Exception):
     )
 
 if __name__ == "__main__":
-    print("🚀 Starting optimized Juno backend server...")
+    print("🚀 Starting optimized Juno backend with music AI...")
     uvicorn.run(app, host="0.0.0.0", port=5020)
