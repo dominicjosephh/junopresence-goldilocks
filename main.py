@@ -77,7 +77,7 @@ def cache_response(cache_key, response):
 def is_music_command(text: str) -> bool:
     """Check if the text is a music-related command"""
     music_keywords = [
-        "play", "pause", "stop", "skip", "next", "previous", "music", 
+        "play", "pause", "stop", "skip", "next", "previous", "music",
         "song", "artist", "album", "playlist", "spotify", "volume",
         "shuffle", "repeat", "by", "put on", "start", "resume"
     ]
@@ -502,7 +502,7 @@ async def process_audio(
         elif text_input:
             user_text = text_input
         else:
-            return JSONResponse(content={"reply": None, "error": "❌ No valid input received."}, media_type="application/json")
+            return JSONResponse(content={"reply": "I didn't receive any input. Please try again!", "audio_url": None, "truncated": false, "music_command": false, "error": "No valid input received"}, media_type="application/json")
 
         # Parse chat_history (limit to last 4)
         history = []
