@@ -397,6 +397,7 @@ async def health_check():
         "music_available": MUSIC_AVAILABLE
     })
 
+# Keep the rest of your endpoints the same...
 @app.post("/api/process_audio")
 async def process_audio(
     audio: UploadFile = None,
@@ -534,4 +535,4 @@ async def process_audio(
 
 # Standard FastAPI/uvicorn runner
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
+    uvicorn.run("backend:app", host="0.0.0.0", port=8000)
