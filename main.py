@@ -1,4 +1,4 @@
-import os
+]import os
 import json
 import base64
 import requests
@@ -508,4 +508,31 @@ async def process_audio(
         chat_history_for_prompt = []
         for m in messages:
             if m["role"] == "system":
-              chat_history_for_prompt.append(f"{some_variable}")
+                # System prompt is not included in chat history for the model prompt
+                continue
+            chat_history_for_prompt.append({"role": m["role"], "content": m["content"]})
+
+        # Get reply from Llama3 (Ollama)
+        juno_reply = get_llama3_reply(user_text, chat_history=chat_history_for_prompt, voice_mode=voice_mode)
+
+        log_chat(user_text, juno_reply)
+
+        cleaned_reply, was_truncated = clean_reply_for_tts(juno_reply, max_len=400)
+        tts_result = generate_tts(cleaned_reply, output_path=AUDIO_PATH)
+        audio_url = f"/static/{AUDIO_FILENAME}" if tts_result else None
+
+        return JSONResponse(content={
+            "reply": juno_reply,
+            "audio_url": audio_url,
+            "truncated": was_truncated,
+            "music_command": False,
+            "music_result": None,
+            "error": None
+        })
+    except Exception as e:
+        print(f"❌ Error in process_audio: {e}")
+        return JSONResponse(content={"reply": None, "error": str(e)})
+
+# Standard FastAPI/uvicorn runner
+if __name__ == "__main__":
+    uvicorn.run("backend:app", host="0.0.0.0", port=8000)
