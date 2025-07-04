@@ -508,4 +508,4 @@ async def process_audio(
         chat_history_for_prompt = []
         for m in messages:
             if m["role"] == "system":
-                chat_history_for_prompt.append(f
+              chat_history_for_prompt.append(f"{some_variable}")
