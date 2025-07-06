@@ -1,0 +1,18 @@
+# Your existing dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+python-multipart>=0.0.6
+
+# NEW: Local Whisper for speech recognition
+openai-whisper>=20231117
+torch>=2.0.0
+numpy>=1.21.0
+
+# Optional: Better audio processing
+librosa>=0.10.0
+soundfile>=0.12.0
+
+# Your existing integrations (if not already listed)
+# Add any other packages you're currently using
