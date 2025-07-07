@@ -19,6 +19,9 @@ import uvicorn
 # Import our music command parser
 from music_command_parser import MusicCommandParser, SpotifyController, MusicIntent
 
+# 🎙️ NEW: Import speech recognition
+from speech_service import get_speech_service
+
 load_dotenv()
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
 voice_id = os.getenv('ELEVENLABS_VOICE_ID')
@@ -518,13 +521,13 @@ app.mount("/static", StaticFiles(directory=AUDIO_DIR), name="static")
 @app.on_event("startup")
 async def startup_event():
     """Initialize optimizations when server starts"""
-    print("🚀 Starting SUPER OPTIMIZED Juno backend with music AI...")
+    print("🚀 Starting SUPER OPTIMIZED Juno backend with music AI and speech recognition...")
     preload_model_optimized()
     print("✅ Backend optimization complete!")
 
 @app.get("/api/test")
 async def test():
-    return JSONResponse(content={"message": "SUPER OPTIMIZED backend with music AI is live!"}, media_type="application/json")
+    return JSONResponse(content={"message": "SUPER OPTIMIZED backend with music AI and speech recognition is live!"}, media_type="application/json")
 
 @app.post("/api/benchmark")
 async def benchmark():
@@ -569,12 +572,69 @@ async def process_audio(
 ):
     try:
         user_text = None
+        
+        # 🎙️ ENHANCED AUDIO PROCESSING WITH LOCAL WHISPER
         if audio:
+            print(f"🎙️ Processing audio input: {audio.filename}")
             contents = await audio.read()
-            with open('temp_audio.m4a', 'wb') as f:
+            print(f"📁 Audio file size: {len(contents)} bytes")
+            
+            if len(contents) == 0:
+                return JSONResponse(content={
+                    "reply": "I didn't receive any audio. Please try again!",
+                    "audio_url": None,
+                    "truncated": False,
+                    "music_command": False,
+                    "error": "Empty audio file"
+                }, media_type="application/json")
+            
+            # Save audio temporarily for Whisper
+            temp_audio_path = f'temp_audio_{int(time.time())}.m4a'
+            with open(temp_audio_path, 'wb') as f:
                 f.write(contents)
-            # Replace with actual Whisper transcription if desired
-            user_text = "[Voice transcription is not implemented here]"
+            
+            try:
+                # Get speech recognition service
+                speech_service = get_speech_service(model_size="base")  # Start with base model
+                
+                # Transcribe audio with Whisper
+                print("[INFO] Transcribing audio with local Whisper...")
+                transcription_result = speech_service.transcribe_audio(contents)
+                
+                if not transcription_result["text"].strip():
+                    print("[WARNING] No speech detected in audio")
+                    return JSONResponse(content={
+                        "reply": "I couldn't understand what you said. Could you try speaking a bit louder?",
+                        "audio_url": None,
+                        "truncated": False,
+                        "music_command": False,
+                        "error": "No speech detected"
+                    }, media_type="application/json")
+                
+                user_text = transcription_result["text"].strip()
+                print(f"[INFO] Transcription result: {user_text}")
+                
+                # Clean up temp file
+                try:
+                    os.unlink(temp_audio_path)
+                except:
+                    pass
+                    
+            except Exception as e:
+                print(f"[ERROR] Transcription failed: {e}")
+                # Clean up temp file
+                try:
+                    os.unlink(temp_audio_path)
+                except:
+                    pass
+                return JSONResponse(content={
+                    "reply": "Sorry, I had trouble understanding your audio. Please try again!",
+                    "audio_url": None,
+                    "truncated": False,
+                    "music_command": False,
+                    "error": f"Transcription failed: {str(e)}"
+                }, media_type="application/json")
+                
         elif text_input:
             user_text = text_input
         else:
@@ -722,5 +782,5 @@ async def universal_exception_handler(request: Request, exc: Exception):
     )
 
 if __name__ == "__main__":
-    print("🚀 Starting SUPER OPTIMIZED Juno backend with music AI...")
+    print("🚀 Starting SUPER OPTIMIZED Juno backend with music AI and speech recognition...")
     uvicorn.run(app, host="0.0.0.0", port=5020)
