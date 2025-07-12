@@ -602,20 +602,20 @@ class AdvancedMemorySystem:
             for fact in personal_facts:
                 self.store_personal_fact(
                     fact['category'], fact['fact_key'], fact['fact_value'],
-                    fact['confidence_score'], conversation_id
+                    fact['confidence_score'], conversation_id, conn
                 )
             
             # Store people mentioned
             people = self.extract_people_mentioned(user_input)
             for person in people:
-                self.store_relationship(person, 'mentioned', conversation_id)
+                self.store_relationship(person, 'mentioned', conversation_id, conn)
             
             # Update topic tracking
             for keyword in keywords:
-                self.update_topic(keyword, emotional_tone)
+                self.update_topic(keyword, emotional_tone, conn)
             
             # Update preferences based on voice mode usage
-            self.update_preference('voice_mode', voice_mode, voice_mode)
+            self.update_preference('voice_mode', voice_mode, voice_mode, conn)
             
             conn.commit()
             conn.close()
@@ -628,10 +628,15 @@ class AdvancedMemorySystem:
             return -1
 
     def store_personal_fact(self, category: str, fact_key: str, fact_value: str, 
-                          confidence: float = 1.0, source_conv_id: int = None):
+                          confidence: float = 1.0, source_conv_id: int = None, conn=None):
         """Store or update a personal fact"""
         try:
-            conn = get_memory_conn()
+            # Use provided connection or create new one
+            close_conn = False
+            if conn is None:
+                conn = get_memory_conn()
+                close_conn = True
+            
             cursor = conn.cursor()
             
             # Check if fact already exists
@@ -659,17 +664,25 @@ class AdvancedMemorySystem:
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (category, fact_key, fact_value, confidence, now, now, source_conv_id))
             
-            conn.commit()
-            conn.close()
+            if close_conn:
+                conn.commit()
+                conn.close()
             
         except Exception as e:
             print(f"❌ Personal fact storage error: {e}")
+            if close_conn and conn:
+                conn.close()
 
     def store_relationship(self, person_name: str, relationship_type: str = 'mentioned', 
-                          source_conv_id: int = None):
+                          source_conv_id: int = None, conn=None):
         """Store or update relationship information"""
         try:
-            conn = get_memory_conn()
+            # Use provided connection or create new one
+            close_conn = False
+            if conn is None:
+                conn = get_memory_conn()
+                close_conn = True
+            
             cursor = conn.cursor()
             
             now = datetime.utcnow().isoformat()
@@ -682,16 +695,24 @@ class AdvancedMemorySystem:
                     ?, 1.0)
             """, (person_name, relationship_type, person_name, now))
             
-            conn.commit()
-            conn.close()
+            if close_conn:
+                conn.commit()
+                conn.close()
             
         except Exception as e:
             print(f"❌ Relationship storage error: {e}")
+            if close_conn and conn:
+                conn.close()
 
-    def update_topic(self, topic_name: str, emotional_context: str = 'neutral'):
+    def update_topic(self, topic_name: str, emotional_context: str = 'neutral', conn=None):
         """Update topic tracking"""
         try:
-            conn = get_memory_conn()
+            # Use provided connection or create new one
+            close_conn = False
+            if conn is None:
+                conn = get_memory_conn()
+                close_conn = True
+                
             cursor = conn.cursor()
             
             now = datetime.utcnow().isoformat()
@@ -704,16 +725,24 @@ class AdvancedMemorySystem:
                     ?, ?, 1.0)
             """, (topic_name, topic_name, now, emotional_context))
             
-            conn.commit()
-            conn.close()
+            if close_conn:
+                conn.commit()
+                conn.close()
             
         except Exception as e:
             print(f"❌ Topic update error: {e}")
+            if close_conn and conn:
+                conn.close()
 
-    def update_preference(self, pref_type: str, pref_key: str, pref_value: str):
+    def update_preference(self, pref_type: str, pref_key: str, pref_value: str, conn=None):
         """Update user preferences"""
         try:
-            conn = get_memory_conn()
+            # Use provided connection or create new one
+            close_conn = False
+            if conn is None:
+                conn = get_memory_conn()
+                close_conn = True
+                
             cursor = conn.cursor()
             
             now = datetime.utcnow().isoformat()
@@ -726,11 +755,14 @@ class AdvancedMemorySystem:
                     ?)
             """, (pref_type, pref_key, pref_value, pref_type, pref_key, now))
             
-            conn.commit()
-            conn.close()
+            if close_conn:
+                conn.commit()
+                conn.close()
             
         except Exception as e:
             print(f"❌ Preference update error: {e}")
+            if close_conn and conn:
+                conn.close()
 
     def get_relevant_memories(self, current_input: str, limit: int = 5) -> List[Dict]:
         """Get relevant past conversations and facts"""
