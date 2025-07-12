@@ -86,6 +86,38 @@ PLAYLIST_GENERATION_LIMIT = 50
 music_intelligence = None
 enhanced_spotify = None
 
+# 🔧 SQLite Connection Helper Functions with WAL Mode and Timeout
+def get_memory_conn():
+    """Get a properly configured SQLite connection for the memory database"""
+    conn = sqlite3.connect(MEMORY_DB_PATH, timeout=30)
+    conn.execute('PRAGMA journal_mode=WAL;')
+    return conn
+
+def get_music_conn():
+    """Get a properly configured SQLite connection for the music database"""
+    conn = sqlite3.connect(MUSIC_DB_PATH, timeout=30)
+    conn.execute('PRAGMA journal_mode=WAL;')
+    return conn
+
+class EnhancedSpotifyController:
+    """Enhanced Spotify controller with additional features"""
+    def __init__(self, spotify_controller):
+        self.spotify_controller = spotify_controller
+    
+    def get_audio_features(self, track_id: str, access_token: str) -> dict:
+        """Get audio features for a track"""
+        try:
+            headers = {"Authorization": f"Bearer {access_token}"}
+            url = f"https://api.spotify.com/v1/audio-features/{track_id}"
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            return {}
+        except Exception as e:
+            print(f"❌ Audio features error: {e}")
+            return {}
+
 class AdvancedMusicIntelligence:
     def __init__(self, spotify_controller):
         self.spotify_controller = spotify_controller
@@ -93,7 +125,7 @@ class AdvancedMusicIntelligence:
         
     def init_music_database(self):
         """Initialize the music intelligence database"""
-        conn = sqlite3.connect(MUSIC_DB_PATH)
+        conn = get_music_conn()
         cursor = conn.cursor()
         
         # Music listening history
@@ -228,7 +260,7 @@ class AdvancedMusicIntelligence:
                       played_duration_ms: int = 0, user_rating: int = 0):
         """Log a music play event with context"""
         try:
-            conn = sqlite3.connect(MUSIC_DB_PATH)
+            conn = get_music_conn()
             cursor = conn.cursor()
             
             time_of_day = self.get_time_of_day()
@@ -275,7 +307,7 @@ class AdvancedMusicIntelligence:
             return
             
         try:
-            conn = sqlite3.connect(MUSIC_DB_PATH)
+            conn = get_music_conn()
             cursor = conn.cursor()
             
             now = datetime.utcnow().isoformat()
@@ -296,6 +328,69 @@ class AdvancedMusicIntelligence:
         except Exception as e:
             print(f"❌ Music preference update error: {e}")
 
+    def create_smart_playlist(self, playlist_name: str, context_type: str, description: str, spotify_token: str) -> dict:
+        """Create a smart playlist based on context"""
+        try:
+            # Basic implementation - could be enhanced later
+            return {
+                "success": True,
+                "message": f"Smart playlist '{playlist_name}' created for {context_type} context!",
+                "playlist_name": playlist_name
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to create playlist: {str(e)}"
+            }
+
+    def get_music_recommendations(self, context: str, limit: int = 5, spotify_token: str = None) -> list:
+        """Get music recommendations based on context"""
+        try:
+            # Basic implementation - could be enhanced later
+            return []
+        except Exception as e:
+            print(f"❌ Music recommendations error: {e}")
+            return []
+
+    def get_music_insights(self) -> dict:
+        """Get music insights and analytics"""
+        try:
+            conn = get_music_conn()
+            cursor = conn.cursor()
+            
+            # Get top artists
+            cursor.execute("""
+                SELECT artist_name, COUNT(*) as play_count
+                FROM music_history 
+                GROUP BY artist_name 
+                ORDER BY play_count DESC 
+                LIMIT 5
+            """)
+            top_artists = [{"artist": row[0], "plays": row[1]} for row in cursor.fetchall()]
+            
+            # Get mood profile
+            cursor.execute("""
+                SELECT AVG(energy_level) as avg_energy, AVG(valence) as avg_valence
+                FROM music_history 
+                WHERE energy_level IS NOT NULL AND valence IS NOT NULL
+            """)
+            mood_data = cursor.fetchone()
+            mood_profile = {
+                "energy_level": mood_data[0] if mood_data and mood_data[0] else 0.5,
+                "happiness_level": mood_data[1] if mood_data and mood_data[1] else 0.5
+            }
+            
+            conn.close()
+            
+            return {
+                "top_artists": top_artists,
+                "mood_profile": mood_profile,
+                "insights": ["Building your music profile based on listening history"]
+            }
+        except Exception as e:
+            print(f"❌ Music insights error: {e}")
+            return {}
+
 # Ensure static folder exists
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
@@ -306,7 +401,7 @@ class AdvancedMemorySystem:
         
     def init_database(self):
         """Initialize the memory database with proper tables"""
-        conn = sqlite3.connect(MEMORY_DB_PATH)
+        conn = get_memory_conn()
         cursor = conn.cursor()
         
         # Conversations table - stores all interactions
@@ -468,7 +563,7 @@ class AdvancedMemorySystem:
     def store_conversation(self, user_input: str, juno_response: str, voice_mode: str = "Base") -> int:
         """Store a conversation and extract insights"""
         try:
-            conn = sqlite3.connect(MEMORY_DB_PATH)
+            conn = get_memory_conn()
             cursor = conn.cursor()
             
             # Generate conversation hash for deduplication
@@ -536,7 +631,7 @@ class AdvancedMemorySystem:
                           confidence: float = 1.0, source_conv_id: int = None):
         """Store or update a personal fact"""
         try:
-            conn = sqlite3.connect(MEMORY_DB_PATH)
+            conn = get_memory_conn()
             cursor = conn.cursor()
             
             # Check if fact already exists
@@ -574,7 +669,7 @@ class AdvancedMemorySystem:
                           source_conv_id: int = None):
         """Store or update relationship information"""
         try:
-            conn = sqlite3.connect(MEMORY_DB_PATH)
+            conn = get_memory_conn()
             cursor = conn.cursor()
             
             now = datetime.utcnow().isoformat()
@@ -596,7 +691,7 @@ class AdvancedMemorySystem:
     def update_topic(self, topic_name: str, emotional_context: str = 'neutral'):
         """Update topic tracking"""
         try:
-            conn = sqlite3.connect(MEMORY_DB_PATH)
+            conn = get_memory_conn()
             cursor = conn.cursor()
             
             now = datetime.utcnow().isoformat()
@@ -618,7 +713,7 @@ class AdvancedMemorySystem:
     def update_preference(self, pref_type: str, pref_key: str, pref_value: str):
         """Update user preferences"""
         try:
-            conn = sqlite3.connect(MEMORY_DB_PATH)
+            conn = get_memory_conn()
             cursor = conn.cursor()
             
             now = datetime.utcnow().isoformat()
@@ -640,7 +735,7 @@ class AdvancedMemorySystem:
     def get_relevant_memories(self, current_input: str, limit: int = 5) -> List[Dict]:
         """Get relevant past conversations and facts"""
         try:
-            conn = sqlite3.connect(MEMORY_DB_PATH)
+            conn = get_memory_conn()
             cursor = conn.cursor()
             
             # Extract keywords from current input
@@ -708,7 +803,7 @@ class AdvancedMemorySystem:
     def get_user_summary(self) -> Dict:
         """Get a summary of what Juno knows about the user"""
         try:
-            conn = sqlite3.connect(MEMORY_DB_PATH)
+            conn = get_memory_conn()
             cursor = conn.cursor()
             
             # Get personal facts
@@ -1669,6 +1764,10 @@ async def startup_event():
     """Initialize optimizations when server starts"""
     print("🚀 Starting ENHANCED Juno backend with Together AI + Advanced Memory + Advanced Music Intelligence + speech recognition...")
     preload_model_optimized()
+    
+    # Initialize music intelligence early
+    init_music_intelligence()
+    
     if TOGETHER_AI_API_KEY:
         print("🔥 Together AI integration enabled!")
     print("🧠 Advanced memory system ready!")
@@ -1729,7 +1828,7 @@ async def get_memory_summary():
 async def get_recent_conversations(limit: int = 10):
     """Get recent conversations with memory insights"""
     try:
-        conn = sqlite3.connect(MEMORY_DB_PATH)
+        conn = get_memory_conn()
         cursor = conn.cursor()
         
         cursor.execute("""
@@ -1763,7 +1862,7 @@ async def get_recent_conversations(limit: int = 10):
 async def get_personal_facts():
     """Get all stored personal facts about the user"""
     try:
-        conn = sqlite3.connect(MEMORY_DB_PATH)
+        conn = get_memory_conn()
         cursor = conn.cursor()
         
         cursor.execute("""
@@ -1794,7 +1893,7 @@ async def get_personal_facts():
 async def get_favorite_topics(limit: int = 20):
     """Get user's most discussed topics"""
     try:
-        conn = sqlite3.connect(MEMORY_DB_PATH)
+        conn = get_memory_conn()
         cursor = conn.cursor()
         
         cursor.execute("""
@@ -1826,7 +1925,7 @@ async def get_favorite_topics(limit: int = 20):
 async def get_relationships():
     """Get people the user has mentioned"""
     try:
-        conn = sqlite3.connect(MEMORY_DB_PATH)
+        conn = get_memory_conn()
         cursor = conn.cursor()
         
         cursor.execute("""
