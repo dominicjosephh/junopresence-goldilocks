@@ -1259,6 +1259,61 @@ def benchmark_performance():
         "provider": "together_ai" if TOGETHER_AI_API_KEY else "local_model"
     }
 
+# 🎵 Spotify Token Verification and Initialization Functions
+def verify_spotify_token(access_token: str) -> bool:
+    """Verify if the Spotify access token is valid by making a simple API call"""
+    if not access_token or not access_token.strip():
+        return False
+    
+    try:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        response = requests.get(
+            "https://api.spotify.com/v1/me",
+            headers=headers,
+            timeout=10
+        )
+        return response.status_code == 200
+    except Exception as e:
+        print(f"🔴 Spotify token verification failed: {e}")
+        return False
+
+def ensure_spotify_ready(spotify_access_token: str = None) -> dict:
+    """Ensure Spotify is properly initialized and token is verified"""
+    global enhanced_spotify, music_intelligence
+    
+    # Initialize music intelligence if not already done
+    if enhanced_spotify is None or music_intelligence is None:
+        try:
+            init_music_intelligence()
+        except Exception as e:
+            print(f"🔴 Failed to initialize music intelligence: {e}")
+            return {
+                "ready": False,
+                "error": "music_init_failed",
+                "message": "I'm having trouble setting up my music features. The system couldn't initialize properly. Please try again in a moment!"
+            }
+    
+    # Check if token is provided
+    if not spotify_access_token or not spotify_access_token.strip():
+        return {
+            "ready": False,
+            "error": "no_token",
+            "message": "I need access to your Spotify to control music! Please make sure you're logged in to Spotify and try connecting again. You can usually do this through the app settings or by refreshing the page."
+        }
+    
+    # Verify token is valid
+    if not verify_spotify_token(spotify_access_token):
+        return {
+            "ready": False,
+            "error": "invalid_token",
+            "message": "Your Spotify session seems to have expired! Please log out and log back in to Spotify, then try again. If this keeps happening, you might need to refresh the page or check your Spotify connection."
+        }
+    
+    return {
+        "ready": True,
+        "message": "Spotify is ready to rock! 🎵"
+    }
+
 # 🎵 Music intelligence functions (UNCHANGED)
 def is_music_command(text: str) -> bool:
     """Check if the text is a music-related command"""
@@ -2092,6 +2147,32 @@ async def process_audio(
         music_response = get_enhanced_music_response(user_text, spotify_access_token, conversation_context)
         
         if music_response is not None:
+            # 🎵 ROBUST SPOTIFY VERIFICATION: Ensure Spotify is ready before processing any music command
+            spotify_readiness = ensure_spotify_ready(spotify_access_token)
+            if not spotify_readiness["ready"]:
+                print(f"🔴 Spotify not ready: {spotify_readiness['error']}")
+                
+                # Return helpful error message instead of generic failure
+                full_reply = spotify_readiness["message"]
+                cleaned_reply, was_truncated = clean_reply_for_tts(full_reply, max_len=400)
+                tts_result = generate_tts(cleaned_reply, output_path=AUDIO_PATH)
+                
+                audio_url = f"/static/{AUDIO_FILENAME}" if tts_result else None
+                return JSONResponse(content={
+                    "reply": full_reply,
+                    "audio_url": audio_url,
+                    "truncated": was_truncated,
+                    "music_command": True,
+                    "music_result": {
+                        "success": False,
+                        "error": spotify_readiness["error"],
+                        "message": spotify_readiness["message"],
+                        "requires_spotify_auth": True
+                    },
+                    "error": None
+                }, media_type="application/json")
+            
+            # If Spotify is ready, proceed with music command processing
             print(f"🎵 Detected music command: {user_text}")
             
             if music_response["success"]:
