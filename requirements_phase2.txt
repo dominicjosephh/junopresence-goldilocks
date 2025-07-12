@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+redis
+librosa
+numpy
+scipy
+scikit-learn
+psutil
+requests
+python-dotenv
