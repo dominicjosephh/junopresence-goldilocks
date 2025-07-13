@@ -97,5 +97,43 @@ async def universal_exception_handler(request: Request, exc: Exception):
         content={"reply": None, "audio_url": None, "error": f"Server error: {str(exc)}"}
     )
 
+# --------- Agentic AI Endpoints ---------
+from pydantic import BaseModel
+
+class TaskRequest(BaseModel):
+    command: str
+
+class ScheduleRequest(BaseModel):
+    message: str
+    delay_seconds: int
+
+def agent_command(command: str):
+    # Basic command dispatcher, expand as needed!
+    if command.lower() == "hello":
+        return {"result": "Hello from Juno!"}
+    elif command.lower() == "time":
+        return {"result": f"Current time is {time.strftime('%H:%M:%S')}"}
+    elif command.lower() == "weather":
+        # Simulate fetching weather (replace with real API if desired)
+        return {"result": "It's sunny outside!"}
+    else:
+        return {"result": f"Unknown command: {command}"}
+
+def schedule_message(message: str, delay: int):
+    def delayed():
+        time.sleep(delay)
+        print(f"[Scheduled] {message}")
+    threading.Thread(target=delayed).start()
+
+@app.post("/agent/task")
+async def run_agent_task(request: TaskRequest):
+    output = agent_command(request.command)
+    return JSONResponse(content=output)
+
+@app.post("/agent/schedule")
+async def schedule_agent_task(request: ScheduleRequest):
+    schedule_message(request.message, request.delay_seconds)
+    return JSONResponse(content={"result": f"Scheduled message '{request.message}' in {request.delay_seconds} seconds."})
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=5020)
