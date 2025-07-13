@@ -21,7 +21,6 @@ from redis_integration import (
     get_smart_ai_reply_cached, 
     get_enhanced_memory_context_cached,
     generate_tts_cached,
-    spotify_search_with_cache,
 )
 from process_audio import process_audio_enhanced
 # Import other modules as needed (music intelligence, etc)
