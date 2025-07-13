@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from fastapi import File, UploadFile
 import cv2
 import numpy as np
+from fastapi import Depends
 
 # --------- Import Phase 2 Modules ---------
 from emotion_intelligence import voice_emotion_analyzer, emotional_adapter
@@ -167,6 +168,26 @@ async def analyze_image(file: UploadFile = File(...)):
     except Exception as e:
         print(f"[Vision Error] {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+# --------- Predictive Intelligence: Scheduled Reminders Suggestion ---------
+# Simple in-memory store for demo purposes
+reminder_history = {}
+
+def update_reminder_history(user_id: str):
+    if user_id not in reminder_history:
+        reminder_history[user_id] = 1
+    else:
+        reminder_history[user_id] += 1
+    return reminder_history[user_id]
+
+@app.post("/predict/reminder")
+async def predict_reminder(user_id: str = Form(...)):
+    count = update_reminder_history(user_id)
+    if count >= 3:
+        suggestion = "You schedule reminders often. Would you like to automate a recurring reminder?"
+    else:
+        suggestion = "No suggestion yet. Keep scheduling reminders!"
+    return JSONResponse(content={"user_id": user_id, "reminder_count": count, "suggestion": suggestion})
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=5020)
