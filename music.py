@@ -1,8 +1,14 @@
-1 file changed, 20 insertions(+)
- create mode 100644 speech_service.py
-root@JunoLive:~/junopresence-goldilocks# python3 main.py
-Traceback (most recent call last):
-  File "/root/junopresence-goldilocks/main.py", line 5, in <module>
-    from music import handle_music_command
-ModuleNotFoundError: No module named 'music'
-root@JunoLive:~/junopresence-goldilocks# 
+from music_command_parser import parse_music_command
+from SpotifyController import SpotifyController
+
+spotify = SpotifyController()
+
+def handle_music_command(command: str):
+    parsed = parse_music_command(command)
+    # Example: parsed = {"action": "play", "track": "Muse"}
+    if parsed["action"] == "play":
+        return spotify.play(parsed["track"])
+    elif parsed["action"] == "pause":
+        return spotify.pause()
+    # Add more as needed
+    return "Unknown music command"
