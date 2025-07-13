@@ -9,6 +9,9 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 from dotenv import load_dotenv
+from fastapi import File, UploadFile
+import cv2
+import numpy as np
 
 # --------- Import Phase 2 Modules ---------
 from emotion_intelligence import voice_emotion_analyzer, emotional_adapter
@@ -134,6 +137,36 @@ async def run_agent_task(request: TaskRequest):
 async def schedule_agent_task(request: ScheduleRequest):
     schedule_message(request.message, request.delay_seconds)
     return JSONResponse(content={"result": f"Scheduled message '{request.message}' in {request.delay_seconds} seconds."})
+
+# --------- Computer Vision Endpoint ---------
+@app.post("/vision/analyze")
+async def analyze_image(file: UploadFile = File(...)):
+    try:
+        # Read uploaded image
+        contents = await file.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        # Load OpenCV's pre-trained Haar cascades
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+        smile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_smile.xml")
+
+        # Detect faces
+        faces = face_cascade.detectMultiScale(img, scaleFactor=1.1, minNeighbors=5)
+        result = {"faces_detected": len(faces), "smiles_detected": 0}
+
+        # Detect smiles in each face
+        smiles_total = 0
+        for (x, y, w, h) in faces:
+            roi = img[y:y+h, x:x+w]
+            smiles = smile_cascade.detectMultiScale(roi, scaleFactor=1.7, minNeighbors=22)
+            smiles_total += len(smiles)
+        result["smiles_detected"] = smiles_total
+
+        return JSONResponse(content=result)
+    except Exception as e:
+        print(f"[Vision Error] {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=5020)
