@@ -42,6 +42,13 @@ ENV/
 env.bak/
 venv.bak/
 
+# Backup files from manual intervention
+*.backup
+*.broken
+*.save
+*.save.*
+*.bak
+
 # Dependencies
 node_modules/
 requirements.txt is tracked
