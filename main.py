@@ -13,6 +13,8 @@ from fastapi import File, UploadFile
 import cv2
 import numpy as np
 from fastapi import Depends
+from fastapi import WebSocket, WebSocketDisconnect
+import uuid
 
 # --------- Import Phase 2 Modules ---------
 from emotion_intelligence import voice_emotion_analyzer, emotional_adapter
@@ -35,6 +37,20 @@ os.makedirs(AUDIO_DIR, exist_ok=True)
 # --------- FastAPI App ---------
 app = FastAPI()
 app.mount("/static", StaticFiles(directory=AUDIO_DIR), name="static")
+sessions = {}
+
+@app.websocket("/ws/convo")
+async def websocket_convo(websocket: WebSocket):
+    await websocket.accept()
+    session_id = str(uuid.uuid4())
+    sessions[session_id] = {"history": [], "voice_mode": "Base"}
+    try:
+        while True:
+            audio_chunk = await websocket.receive_bytes()
+            # TODO: Integrate STT, LLM, TTS here
+            await websocket.send_text("Received audio chunk!")  # Echo for testing
+    except WebSocketDisconnect:
+        sessions.pop(session_id, None)
 
 # --------- Startup Event ---------
 @app.on_event("startup")
