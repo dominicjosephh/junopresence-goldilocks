@@ -4,16 +4,13 @@ import random
 import hashlib
 import time
 import threading
-from fastapi import FastAPI, UploadFile, Form, Request
+from fastapi import FastAPI, UploadFile, Form, Request, File, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import File, UploadFile
 import cv2
 import numpy as np
-from fastapi import Depends
-from fastapi import WebSocket, WebSocketDisconnect
 import uuid
 
 # --------- Import Phase 2 Modules ---------
@@ -37,8 +34,24 @@ os.makedirs(AUDIO_DIR, exist_ok=True)
 # --------- FastAPI App ---------
 app = FastAPI()
 app.mount("/static", StaticFiles(directory=AUDIO_DIR), name="static")
+
+# --------- WebSocket Session State ---------
 sessions = {}
 
+# --------- Speech-to-Text (Whisper) Integration Stub ---------
+# If you have a speech_service.py module, import and use it instead!
+def transcribe_audio(audio_bytes) -> str:
+    """
+    Replace this stub with your actual Whisper speech-to-text logic.
+    For example, you might use speech_service.get_speech_service().transcribe_audio(audio_bytes)
+    """
+    # Example using a hypothetical speech_service:
+    # speech_service = get_speech_service(model_size="base")
+    # result = speech_service.transcribe_audio(audio_bytes)
+    # return result["text"]
+    return "Transcribed text goes here."  # Stub for testing
+
+# --------- WebSocket Convo Mode ---------
 @app.websocket("/ws/convo")
 async def websocket_convo(websocket: WebSocket):
     await websocket.accept()
@@ -47,8 +60,17 @@ async def websocket_convo(websocket: WebSocket):
     try:
         while True:
             audio_chunk = await websocket.receive_bytes()
-            # TODO: Integrate STT, LLM, TTS here
-            await websocket.send_text("Received audio chunk!")  # Echo for testing
+            # STEP 1: Transcribe audio chunk to text (Whisper STT)
+            user_text = transcribe_audio(audio_chunk)
+            sessions[session_id]["history"].append({"role": "user", "content": user_text})
+            # STEP 2: Generate reply (LLM - to be implemented in next step)
+            # reply = generate_reply(sessions[session_id]["history"], sessions[session_id]["voice_mode"])
+            # sessions[session_id]["history"].append({"role": "assistant", "content": reply})
+            # STEP 3: Synthesize reply to audio (TTS - to be implemented in later step)
+            # reply_audio = synthesize_tts(reply, sessions[session_id]["voice_mode"])
+            # await websocket.send_bytes(reply_audio)
+            # For now, send transcript text back for testing
+            await websocket.send_text(user_text)
     except WebSocketDisconnect:
         sessions.pop(session_id, None)
 
@@ -75,7 +97,6 @@ async def test():
 # Benchmark
 @app.post("/api/benchmark")
 async def benchmark():
-    # You can import your benchmark_performance function here or implement it modularly
     from phase2_testing import benchmark_performance
     results = benchmark_performance()
     return JSONResponse(content=results)
@@ -127,13 +148,11 @@ class ScheduleRequest(BaseModel):
     delay_seconds: int
 
 def agent_command(command: str):
-    # Basic command dispatcher, expand as needed!
     if command.lower() == "hello":
         return {"result": "Hello from Juno!"}
     elif command.lower() == "time":
         return {"result": f"Current time is {time.strftime('%H:%M:%S')}"}
     elif command.lower() == "weather":
-        # Simulate fetching weather (replace with real API if desired)
         return {"result": "It's sunny outside!"}
     else:
         return {"result": f"Unknown command: {command}"}
@@ -158,34 +177,25 @@ async def schedule_agent_task(request: ScheduleRequest):
 @app.post("/vision/analyze")
 async def analyze_image(file: UploadFile = File(...)):
     try:
-        # Read uploaded image
         contents = await file.read()
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-        # Load OpenCV's pre-trained Haar cascades
         face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
         smile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_smile.xml")
-
-        # Detect faces
         faces = face_cascade.detectMultiScale(img, scaleFactor=1.1, minNeighbors=5)
         result = {"faces_detected": len(faces), "smiles_detected": 0}
-
-        # Detect smiles in each face
         smiles_total = 0
         for (x, y, w, h) in faces:
             roi = img[y:y+h, x:x+w]
             smiles = smile_cascade.detectMultiScale(roi, scaleFactor=1.7, minNeighbors=22)
             smiles_total += len(smiles)
         result["smiles_detected"] = smiles_total
-
         return JSONResponse(content=result)
     except Exception as e:
         print(f"[Vision Error] {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 # --------- Predictive Intelligence: Scheduled Reminders Suggestion ---------
-# Simple in-memory store for demo purposes
 reminder_history = {}
 
 def update_reminder_history(user_id: str):
