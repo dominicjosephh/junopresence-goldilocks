@@ -1,9 +1,11 @@
+
 import os
 import json
 import random
 import hashlib
 import time
 import subprocess
+import requests
 from threading import Lock
 from dotenv import load_dotenv
 
@@ -16,10 +18,8 @@ MODEL_PATH = "/opt/models/Meta-Llama-3-8B-Instruct.Q4_K_M.gguf"
 USE_TOGETHER_AI_FIRST = os.getenv('USE_TOGETHER_AI_FIRST', 'false').lower() == 'true'
 TOGETHER_AI_TIMEOUT = 15
 
-MODEL_LOADED = False
 MODEL_LOCK = Lock()
 CURRENT_PERSONALITY = "Base"
-
 RESPONSE_CACHE = {}
 CACHE_MAX_SIZE = 50
 CACHE_TTL = 3600  # seconds
@@ -53,14 +53,14 @@ def get_fallback_response(personality="Base", user_input=""):
         "Base": [
             "My response system is running a bit slow today, but I'm here. What's on your mind?",
             "Having some technical delays, but I'm still ready to chat! How can I help?",
-        ],
-        # ... (add the rest from backend.py as needed)
+        ]
     }
     responses = fallback_responses.get(personality, fallback_responses["Base"])
     return random.choice(responses)
 
 def get_together_ai_reply(messages, personality="Base", max_tokens=150):
     if not TOGETHER_AI_API_KEY:
+        print("❌ TOGETHER_AI_API_KEY not set.")
         return None
     try:
         model = "meta-llama/Meta-Llama-3-8B-Instruct"
@@ -87,9 +87,10 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
             reply = data["choices"][0]["message"]["content"].strip()
             return reply
         else:
-            return None
-    except Exception:
-        return None
+            print(f"❌ Together AI returned status {response.status_code}: {response.text}")
+    except Exception as e:
+        print(f"❌ Together AI Exception: {e}")
+    return None
 
 def get_llama3_reply(prompt, chat_history=None, personality="Base"):
     chat_history_str = str(chat_history) if chat_history else ""
@@ -104,6 +105,13 @@ def get_llama3_reply(prompt, chat_history=None, personality="Base"):
         full_prompt = f"{chat_history_text}\nUser: {prompt}"
 
     try:
+        if not os.path.exists(LLAMA_CPP_PATH):
+            print("⚠️ LLaMA executable not found.")
+            return None
+        if not os.path.exists(MODEL_PATH):
+            print("⚠️ LLaMA model file not found.")
+            return None
+
         cmd = [
             LLAMA_CPP_PATH,
             "-m", MODEL_PATH,
@@ -119,11 +127,12 @@ def get_llama3_reply(prompt, chat_history=None, personality="Base"):
                 response = response.replace(full_prompt, "").strip()
             cache_response(cache_key, response)
             return response
-    except Exception:
-        pass
+        else:
+            print(f"⚠️ LLaMA returned non-zero exit or no output.")
+    except Exception as e:
+        print(f"❌ LLaMA Exception: {e}")
 
-    fallback = get_fallback_response(personality, prompt)
-    return fallback
+    return None
 
 def optimize_response_length(personality, base_length=100):
     length_modifiers = {
@@ -144,8 +153,8 @@ def generate_reply(user_input, chat_history, personality="Base"):
         try:
             history = json.loads(chat_history)
             messages.extend(history)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"⚠️ Failed to parse chat history: {e}")
     messages.append({"role": "user", "content": user_input})
 
     messages_str = json.dumps(messages, sort_keys=True)
@@ -156,21 +165,17 @@ def generate_reply(user_input, chat_history, personality="Base"):
 
     max_tokens = optimize_response_length(personality, 120)
 
-    # Try Together AI first if possible
     if TOGETHER_AI_API_KEY and (USE_TOGETHER_AI_FIRST or not os.path.exists(LLAMA_CPP_PATH)):
-        together_response = get_together_ai_reply(messages, personality, max_tokens)
-        if together_response:
-            cache_response(cache_key, together_response)
-            return together_response
+        response = get_together_ai_reply(messages, personality, max_tokens)
+        if response:
+            cache_response(cache_key, response)
+            return response
 
-    # Try local llama.cpp if available
-    if os.path.exists(LLAMA_CPP_PATH) and os.path.exists(MODEL_PATH):
-        local_response = get_llama3_reply(user_input, messages, personality)
-        if local_response:
-            cache_response(cache_key, local_response)
-            return local_response
+    response = get_llama3_reply(user_input, messages, personality)
+    if response:
+        cache_response(cache_key, response)
+        return response
 
-    # Fallback
     fallback = get_fallback_response(personality, user_input)
     return fallback
 
