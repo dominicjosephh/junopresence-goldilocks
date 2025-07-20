@@ -1,6 +1,7 @@
 from fastapi import FastAPI, WebSocket, Request, UploadFile, Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from ai import generate_reply, get_models, set_personality, get_personality
 from memory import (
@@ -27,9 +28,14 @@ app.add_middleware(
 )
 
 # ---- AI Endpoints ----
+class ChatRequest(BaseModel):
+    user_input: str
+    chat_history: str = ""
+    personality: str = "Base"
+
 @app.post("/api/v1/ai/chat")
-async def ai_chat_endpoint(user_input: str = Form(...), chat_history: str = Form(""), personality: str = Form("Base")):
-    reply = generate_reply(user_input, chat_history, personality)
+async def ai_chat_endpoint(req: ChatRequest):
+    reply = generate_reply(req.user_input, req.chat_history, req.personality)
     return {"reply": reply}
 
 @app.get("/api/v1/ai/models")
@@ -90,13 +96,22 @@ async def memory_relationships():
     return get_relationships()
 
 # ---- Music Endpoints ----
+class MusicCommandRequest(BaseModel):
+    command: str
+    spotify_token: str = ""
+
 @app.post("/api/v1/music/command")
-async def music_command(command: str, spotify_token: str = Form("")):
-    return handle_music_command(command, spotify_token)
+async def music_command(req: MusicCommandRequest):
+    return handle_music_command(req.command, req.spotify_token)
+
+class MusicPlaylistRequest(BaseModel):
+    playlist_name: str
+    context: str
+    spotify_token: str = ""
 
 @app.post("/api/v1/music/playlist")
-async def music_playlist(playlist_name: str, context: str, spotify_token: str = Form("")):
-    return create_playlist(playlist_name, context, spotify_token)
+async def music_playlist(req: MusicPlaylistRequest):
+    return create_playlist(req.playlist_name, req.context, req.spotify_token)
 
 @app.get("/api/v1/music/recommendations")
 async def music_recommendations(context: str, spotify_token: str = ""):
@@ -106,9 +121,13 @@ async def music_recommendations(context: str, spotify_token: str = ""):
 async def music_insights():
     return get_music_insights()
 
+class LogTrackRequest(BaseModel):
+    spotify_token: str = ""
+    context: str = "general"
+
 @app.post("/api/v1/music/log_track")
-async def log_track(spotify_token: str = Form(""), context: str = Form("general")):
-    log_current_track(spotify_token, context)
+async def log_track(req: LogTrackRequest):
+    log_current_track(req.spotify_token, req.context)
     return {"status": "ok"}
 
 # ---- Health/Utility ----
