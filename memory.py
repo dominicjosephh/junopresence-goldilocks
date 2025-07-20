@@ -1,11 +1,28 @@
-import redis
-import os
+# memory.py
+def store_memory(key, value):
+    # TODO: Store a memory/fact
+    pass
 
-redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-redis_client = redis.from_url(redis_url)
+def retrieve_memory(key):
+    # TODO: Retrieve a memory/fact
+    return None
 
-def store_memory(key: str, value: str):
-    redis_client.set(key, value)
+def get_memory_summary():
+    # TODO: Aggregate user summary, facts, topics, relationships
+    return {}
 
-def retrieve_memory(key: str) -> str:
-    return redis_client.get(key)
+def get_recent_conversations(limit=10):
+    # TODO: Return recent conversations
+    return []
+
+def get_personal_facts():
+    # TODO: Return personal facts
+    return []
+
+def get_favorite_topics():
+    # TODO: Return favorite topics
+    return []
+
+def get_relationships():
+    # TODO: Return relationships
+    return []
