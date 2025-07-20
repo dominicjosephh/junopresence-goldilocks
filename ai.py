@@ -63,7 +63,7 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
     if not TOGETHER_AI_API_KEY:
         return None
     try:
-        model = "meta-llama/Llama-3-8b-chat-hf"
+        model = model = "meta-llama/Meta-Llama-3-3B-Instruct-Turbo"
         headers = {
             "Authorization": f"Bearer {TOGETHER_AI_API_KEY}",
             "Content-Type": "application/json"
