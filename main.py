@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from ai import generate_reply, get_models, set_personality, get_personality
+from ai import generate_reply
+from utils import get_models, set_personality, get_personality
 from pydantic import BaseModel
 import uvicorn
 
@@ -39,7 +40,11 @@ async def process_audio(request: AudioRequest):
             max_tokens=150
         )
 
-        print(f"🧠 Generated reply: {reply[:100]}...")  # Log a preview
+        # Type check before slicing
+        if isinstance(reply, str):
+            print(f"🧠 Generated reply: {reply[:100]}...")  # Log a preview
+        else:
+            print(f"🧠 Generated reply (non-str type): {type(reply)}: {reply}")
 
         return {
             "reply": reply,
