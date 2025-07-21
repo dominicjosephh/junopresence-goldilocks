@@ -1,46 +1,47 @@
-import os
-from dotenv import load_dotenv
-from ai_cache import (
-    get_fallback_response,
-    get_llama3_reply,
-    get_together_ai_reply,
-    optimize_response_length,
-)
-from utils import get_cache_key, get_cached_response, cache_response
 
-load_dotenv()
+from ai_cache import get_fallback_response, get_llama3_reply, optimize_response_length
 
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "together")  # fallback option
+def generate_reply(messages, personality, max_tokens=150):
+    # Ensure messages is a list of dicts
+    if isinstance(messages, str):
+        messages = [{"role": "user", "content": messages}]
+    elif isinstance(messages, list):
+        messages = [m for m in messages if isinstance(m, dict) and "content" in m]
 
-def get_models():
-    return ["llama3", "together", "fallback"]
+    try:
+        prompt = messages[-1]["content"]
+    except (IndexError, TypeError):
+        return {
+            "reply": "[Error] Invalid message format.",
+            "audio_url": None,
+            "truncated": 0,
+            "error": "Missing or malformed messages",
+            "music_commands": []
+        }
 
-# --- Personality Handling ---
+    # Default mock system prompt (can be extended for different personalities)
+    system_prompt = f"You are a helpful assistant with the personality: {personality}"
 
-def set_personality(name: str):
-    os.environ["JUNO_PERSONALITY"] = name
+    conversation = [{"role": "system", "content": system_prompt}, *messages]
 
-def get_personality() -> str:
-    return os.environ.get("JUNO_PERSONALITY", "Base")
+    try:
+        # Choose backend model logic (replace or expand as needed)
+        response_text = get_llama3_reply(conversation, personality=personality, max_tokens=max_tokens)
 
-# --- Reply Generation Logic ---
+        return {
+            "reply": response_text,
+            "audio_url": None,
+            "truncated": 0,
+            "error": None,
+            "music_commands": []
+        }
 
-def generate_reply(messages: list[dict], personality: str, model: str = DEFAULT_MODEL) -> str:
-    prompt = messages[-1]["content"]
-    context = messages[-2]["content"] if len(messages) > 1 else ""
-    cache_key = get_cache_key(prompt, context)
-    
-    cached = get_cached_response(cache_key)
-    if cached:
-        return cached
-
-    if model == "llama3":
-        response = get_llama3_reply(prompt, personality)
-    elif model == "together":
-        response = get_together_ai_reply(prompt, personality)
-    else:
-        response = get_fallback_response(prompt)
-
-    response = optimize_response_length(response)
-    cache_response(cache_key, response)
-    return response
+    except Exception as e:
+        fallback = get_fallback_response(messages)
+        return {
+            "reply": fallback,
+            "audio_url": None,
+            "truncated": 1,
+            "error": str(e),
+            "music_commands": []
+        }
