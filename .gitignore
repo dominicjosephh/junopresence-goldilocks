@@ -44,4 +44,4 @@ venv.bak/
 
 # Dependencies
 node_modules/
-requirements.txt is tracked
+requirements.txt is trackedjuno_env/
