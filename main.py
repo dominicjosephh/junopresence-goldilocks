@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
+from ai import generate_reply, get_models, set_personality, get_personality
 
 # Import modular components
 from ai import generate_reply, get_models, set_personality, get_personality
