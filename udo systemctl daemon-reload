@@ -1,0 +1,13 @@
+[0;1;32m●[0m junopresence.service - JunoPresence FastAPI Service
+     Loaded: loaded (/etc/systemd/system/junopresence.service; enabled; vendor preset: enabled)
+     Active: [0;1;32mactive (running)[0m since Sun 2025-07-13 02:13:26 UTC; 20ms ago
+   Main PID: 168988 (python3)
+      Tasks: 1 (limit: 9478)
+     Memory: 3.2M (max: 500.0M available: 496.7M)
+        CPU: 16ms
+     CGroup: /system.slice/junopresence.service
+             └─168988 /usr/bin/python3 /root/junopresence-goldilocks/backend/main.py
+
+Jul 13 02:13:26 JunoLive systemd[1]: Started JunoPresence FastAPI Service.
+Jul 13 02:13:26 JunoLive systemd[1]: [0;1;39m[0;1;31m[0;1;39mjunopresence.service: Main process exited, code=exited, status=2/INVALIDARGUMENT[0m
+Jul 13 02:13:26 JunoLive systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mjunopresence.service: Failed with result 'exit-code'.[0m

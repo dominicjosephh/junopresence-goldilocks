@@ -1,0 +1,7 @@
+Requirement already satisfied: pytest in /usr/local/lib/python3.10/dist-packages (8.4.1)
+Requirement already satisfied: exceptiongroup>=1 in /usr/local/lib/python3.10/dist-packages (from pytest) (1.2.2)
+Requirement already satisfied: iniconfig>=1 in /usr/local/lib/python3.10/dist-packages (from pytest) (2.1.0)
+Requirement already satisfied: packaging>=20 in /usr/lib/python3/dist-packages (from pytest) (21.3)
+Requirement already satisfied: pluggy<2,>=1.5 in /usr/local/lib/python3.10/dist-packages (from pytest) (1.6.0)
+Requirement already satisfied: pygments>=2.7.2 in /usr/local/lib/python3.10/dist-packages (from pytest) (2.19.2)
+Requirement already satisfied: tomli>=1 in /usr/local/lib/python3.10/dist-packages (from pytest) (2.2.1)

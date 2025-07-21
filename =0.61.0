@@ -1,0 +1,2 @@
+Requirement already satisfied: memory-profiler in /usr/local/lib/python3.10/dist-packages (0.61.0)
+Requirement already satisfied: psutil in /usr/local/lib/python3.10/dist-packages (from memory-profiler) (7.0.0)
