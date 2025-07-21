@@ -3,8 +3,8 @@ import subprocess
 import json
 import logging
 import requests
-from utils.cache import get_cache_key, ai_cache
-from utils.env import USE_TOGETHER_AI_FIRST, TOGETHER_AI_API_KEY, LLAMA_CPP_PATH, MODEL_PATH
+from utils import get_cache_key, get_cached_response, cache_responsefrom utils.env 
+import USE_TOGETHER_AI_FIRST, TOGETHER_AI_API_KEY, LLAMA_CPP_PATH, MODEL_PATH
 from memory.personality import get_fallback_response
 
 logger = logging.getLogger(__name__)
