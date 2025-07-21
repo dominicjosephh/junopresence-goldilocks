@@ -1,39 +1,48 @@
-import os
-import subprocess
 import json
-import logging
-import requests
-from utils import (
-    get_cache_key,
-    get_cached_response,
-    cache_response,
-    USE_TOGETHER_AI_FIRST,
-    TOGETHER_AI_API_KEY,
-    LLAMA_CPP_PATH,
-    MODEL_PATH,
-    get_fallback_response
-)
+import os
+from utils import get_cache_key, get_cached_response, cache_response
+from dotenv import load_dotenv
+from ai_cache import get_fallback_response, get_llama3_reply, get_together_ai_reply, optimize_response_length
 
-logger = logging.getLogger(__name__)
+load_dotenv()
 
-def get_together_ai_reply(messages, personality):
-    model = "meta-llama/Llama-3-8b-chat-hf"
-    url = "https://api.together.xyz/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {TOGETHER_AI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": model,
-        "messages": messages,
-        "temperature": 0.8
-    }
+TOGETHER_AI_API_KEY = os.getenv("TOGETHER_AI_API_KEY")
+USE_TOGETHER_AI_FIRST = os.getenv("USE_TOGETHER_AI_FIRST", "false").lower() == "true"
+LLAMA_CPP_PATH = os.getenv("LLAMA_CPP_PATH")
+MODEL_PATH = os.getenv("MODEL_PATH")
 
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        result = response.json()
-        return result['choices'][0]['message']['content']
-    except Exception as e:
-        logger.error(f"❌ Together AI Exception: {e}")
-        return get_fallback_response(personality, messages[-1]["content"])
+def generate_reply(user_input, chat_history, personality="Base"):
+    messages = []
+    if chat_history:
+        try:
+            history = json.loads(chat_history)
+            messages.extend(history)
+        except Exception:
+            pass
+    messages.append({"role": "user", "content": user_input})
+
+    messages_str = json.dumps(messages, sort_keys=True)
+    cache_key = get_cache_key(messages_str, personality=personality)
+    cached = get_cached_response(cache_key)
+    if cached:
+        return cached
+
+    max_tokens = optimize_response_length(personality, 120)
+
+    # Try Together AI first if available
+    if TOGETHER_AI_API_KEY and (USE_TOGETHER_AI_FIRST or not os.path.exists(LLAMA_CPP_PATH)):
+        together_response = get_together_ai_reply(messages, personality, max_tokens)
+        if together_response:
+            cache_response(cache_key, together_response)
+            return together_response
+
+    # Try local llama.cpp fallback
+    if os.path.exists(LLAMA_CPP_PATH) and os.path.exists(MODEL_PATH):
+        local_response = get_llama3_reply(user_input, messages, personality)
+        if local_response:
+            cache_response(cache_key, local_response)
+            return local_response
+
+    # Final fallback
+    fallback = get_fallback_response(personality, user_input)
+    return fallback
