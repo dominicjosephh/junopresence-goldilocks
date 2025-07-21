@@ -127,6 +127,10 @@ def get_llama3_reply(prompt, chat_history=None, personality="Base"):
     return fallback
 
 def optimize_response_length(text, max_tokens=500):
+    if text is None:
+        return "Sorry, I couldn't generate a response."
+    if not isinstance(text, str):
+        text = str(text)
     words = text.split()
     if len(words) <= max_tokens:
         return text

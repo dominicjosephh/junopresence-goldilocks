@@ -18,6 +18,12 @@ def generate_reply(messages, personality="Base", max_tokens=150):
 
     print(f"Calling AI with personality={personality}, max_tokens={max_tokens}")
     response = get_together_ai_reply(messages, personality, max_tokens)
+    
+    # Ensure we always return a string - if AI API fails, use fallback
+    if response is None:
+        from utils import get_fallback_response
+        response = get_fallback_response(personality, prompt)
+    
     optimized_response = optimize_response_length(response)
 
     cache_response(cache_key, optimized_response)
