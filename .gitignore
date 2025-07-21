@@ -15,6 +15,10 @@ logs/
 *.db-wal
 *.db-shm
 
+# Cache files
+cache/
+*.cache
+
 # Test files
 test_*.py
 *_test.py
