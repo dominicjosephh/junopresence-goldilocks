@@ -6,6 +6,7 @@ import time
 import subprocess
 from threading import Lock
 from dotenv import load_dotenv
+import requests
 
 load_dotenv()
 
@@ -63,7 +64,7 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
     if not TOGETHER_AI_API_KEY:
         return None
     try:
-        model = model = "meta-llama/Meta-Llama-3-3B-Instruct-Turbo"
+        model = "meta-llama/Meta-Llama-3-3B-Instruct-Turbo"
         headers = {
             "Authorization": f"Bearer {TOGETHER_AI_API_KEY}",
             "Content-Type": "application/json"
@@ -125,54 +126,11 @@ def get_llama3_reply(prompt, chat_history=None, personality="Base"):
     fallback = get_fallback_response(personality, prompt)
     return fallback
 
-def optimize_response_length(personality, base_length=100):
-    length_modifiers = {
-        "Sassy": 80,
-        "Hype": 90,
-        "Shadow": 85,
-        "Assert": 75,
-        "Challenger": 85,
-        "Ritual": 120,
-        "Joy": 95,
-        "Empathy": 110,
-    }
-    return length_modifiers.get(personality, base_length)
-
-def generate_reply(user_input, chat_history, personality="Base"):
-    messages = []
-    if chat_history:
-        try:
-            history = json.loads(chat_history)
-            messages.extend(history)
-        except Exception:
-            pass
-    messages.append({"role": "user", "content": user_input})
-
-    messages_str = json.dumps(messages, sort_keys=True)
-    cache_key = get_cache_key(messages_str, personality=personality)
-    cached = get_cached_response(cache_key)
-    if cached:
-        return cached
-
-    max_tokens = optimize_response_length(personality, 120)
-
-    # Try Together AI first if possible
-    if TOGETHER_AI_API_KEY and (USE_TOGETHER_AI_FIRST or not os.path.exists(LLAMA_CPP_PATH)):
-        together_response = get_together_ai_reply(messages, personality, max_tokens)
-        if together_response:
-            cache_response(cache_key, together_response)
-            return together_response
-
-    # Try local llama.cpp if available
-    if os.path.exists(LLAMA_CPP_PATH) and os.path.exists(MODEL_PATH):
-        local_response = get_llama3_reply(user_input, messages, personality)
-        if local_response:
-            cache_response(cache_key, local_response)
-            return local_response
-
-    # Fallback
-    fallback = get_fallback_response(personality, user_input)
-    return fallback
+def optimize_response_length(text, max_tokens=500):
+    words = text.split()
+    if len(words) <= max_tokens:
+        return text
+    return " ".join(words[:max_tokens]) + "..."
 
 def get_models():
     models = []
