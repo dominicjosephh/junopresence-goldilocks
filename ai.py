@@ -1,60 +1,24 @@
-from ai_cache import (
-    get_fallback_response,
-    get_llama3_reply,
-    optimize_response_length
-)
+from ai_cache import get_cache_key, get_cached_response, cache_response
+from utils import get_together_ai_reply, optimize_response_length
+import os
+import openai
 
-# ✅ This is the main logic for generating replies
 def generate_reply(messages, personality="Base", max_tokens=150):
-    if isinstance(messages, str):
-        messages = [{"role": "user", "content": messages}]
-    elif isinstance(messages, list):
-        messages = [m for m in messages if isinstance(m, dict) and "content" in m]
+    if not isinstance(messages, list) or not messages:
+        raise ValueError("messages must be a non-empty list")
+    if not isinstance(messages[-1], dict) or "content" not in messages[-1]:
+        raise ValueError("Last message must be a dict with a 'content' key")
 
-    try:
-        prompt = messages[-1]["content"]
-    except (IndexError, TypeError):
-        return {
-            "reply": "[Error] Invalid message format.",
-            "audio_url": None,
-            "truncated": 0,
-            "error": "Missing or malformed messages",
-            "music_commands": []
-        }
+    prompt = messages[-1]["content"]
+    cache_key = get_cache_key(prompt, personality)
 
-    system_prompt = f"You are a helpful assistant with the personality: {personality}"
-    conversation = [{"role": "system", "content": system_prompt}, *messages]
+    cached = get_cached_response(cache_key)
+    if cached:
+        return cached
 
-    try:
-        response_text = get_llama3_reply(conversation, personality=personality, max_tokens=max_tokens)
+    print(f"Calling AI with personality={personality}, max_tokens={max_tokens}")
+    response = get_together_ai_reply(messages, personality, max_tokens)
+    optimized_response = optimize_response_length(response)
 
-        return {
-            "reply": response_text,
-            "audio_url": None,
-            "truncated": 0,
-            "error": None,
-            "music_commands": []
-        }
-
-    except Exception as e:
-        fallback = get_fallback_response(messages)
-        return {
-            "reply": fallback,
-            "audio_url": None,
-            "truncated": 1,
-            "error": str(e),
-            "music_commands": []
-        }
-
-# ✅ Returns available models (placeholder)
-def get_models():
-    return ["llama3", "gpt-4o", "juno-special"]
-
-# ✅ Placeholder personality setter
-def set_personality(profile_name):
-    # You can extend this later
-    return f"Personality set to {profile_name}"
-
-# ✅ Placeholder personality getter
-def get_personality():
-    return "Base"
+    cache_response(cache_key, optimized_response)
+    return optimized_response
