@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ValidationError
+from typing import Optional
 from utils import get_together_ai_reply
 import uvicorn
 
@@ -17,8 +18,8 @@ app.add_middleware(
 class AudioRequest(BaseModel):
     messages: list
     personality: str = "Base"
-    audio_url: str = None
-    music_command: str = None
+    audio_url: Optional[str] = None
+    music_command: Optional[str] = None
 
 @app.on_event("startup")
 async def startup_event():
