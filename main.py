@@ -32,7 +32,7 @@ async def process_audio(request: AudioRequest):
         print(f"Incoming request with personality: {request.personality}")
         print(f"Incoming messages: {request.messages}")
 
-        # Basic input validation
+        # Robust input validation
         if not isinstance(request.messages, list) or not request.messages:
             raise ValueError("messages must be a non-empty list")
         last_msg = request.messages[-1]
@@ -46,15 +46,24 @@ async def process_audio(request: AudioRequest):
         )
 
         return {
-            "reply": reply if isinstance(reply, str) else "",
+            "reply": reply if isinstance(reply, str) and reply else "",
             "error": None,
             "audio_url": request.audio_url,
             "music_command": request.music_command,
             "truncated": 0
         }
 
-    except (ValidationError, ValueError, Exception) as e:
-        print(f"❌ Error in process_audio: {e}")
+    except (ValidationError, ValueError) as e:
+        print(f"❌ Validation error in process_audio: {e}")
+        return {
+            "reply": "Sorry, I encountered a validation error.",
+            "error": str(e),
+            "audio_url": getattr(request, "audio_url", None),
+            "music_command": getattr(request, "music_command", None),
+            "truncated": 0
+        }
+    except Exception as e:
+        print(f"❌ General error in process_audio: {e}")
         return {
             "reply": "Sorry, I encountered an error.",
             "error": str(e),
