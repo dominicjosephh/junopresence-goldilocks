@@ -1,8 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from ai import generate_reply
-from utils import get_models, set_personality, get_personality
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+from utils import get_together_ai_reply
 import uvicorn
 
 app = FastAPI()
@@ -23,7 +22,7 @@ class AudioRequest(BaseModel):
 
 @app.on_event("startup")
 async def startup_event():
-    print("✅Starting Juno Presence AI Backend...")
+    print("✅ Starting Juno Presence AI Backend...")
     print("🎯 Voice Mode: Base")
     print("🔁 All modules loaded successfully")
 
@@ -33,34 +32,34 @@ async def process_audio(request: AudioRequest):
         print(f"Incoming request with personality: {request.personality}")
         print(f"Incoming messages: {request.messages}")
 
-        # Generate reply
-        reply = generate_reply(
+        # Basic input validation
+        if not isinstance(request.messages, list) or not request.messages:
+            raise ValueError("messages must be a non-empty list")
+        last_msg = request.messages[-1]
+        if not isinstance(last_msg, dict) or "content" not in last_msg:
+            raise ValueError("Last message must be a dict with a 'content' key")
+
+        reply = get_together_ai_reply(
             messages=request.messages,
             personality=request.personality,
             max_tokens=150
         )
 
-        # Type check before slicing
-        if isinstance(reply, str):
-            print(f"🧠 Generated reply: {reply[:100]}...")  # Log a preview
-        else:
-            print(f"🧠 Generated reply (non-str type): {type(reply)}: {reply}")
-
         return {
-            "reply": reply,
+            "reply": reply if isinstance(reply, str) else "",
             "error": None,
             "audio_url": request.audio_url,
             "music_command": request.music_command,
             "truncated": 0
         }
 
-    except Exception as e:
+    except (ValidationError, ValueError, Exception) as e:
         print(f"❌ Error in process_audio: {e}")
         return {
             "reply": "Sorry, I encountered an error.",
             "error": str(e),
-            "audio_url": request.audio_url,
-            "music_command": request.music_command,
+            "audio_url": getattr(request, "audio_url", None),
+            "music_command": getattr(request, "music_command", None),
             "truncated": 0
         }
 
