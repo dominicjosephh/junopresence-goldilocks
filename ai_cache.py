@@ -32,11 +32,9 @@ def get_fallback_response(prompt: str, context: str = "") -> str:
     return "Sorry, something went wrong. Please try again later."
 
 def get_llama3_reply(prompt: str, context: str = "") -> str:
-    # Placeholder: integrate with local or remote LLaMA3 model
     return f"[LLAMA3 response to]: {prompt}"
 
 def get_together_ai_reply(prompt: str, context: str = "") -> str:
-    # Placeholder: simulate a Together AI response (can swap w/ real API)
     return f"[Together.AI response to]: {prompt}"
 
 def optimize_response_length(text: str, max_tokens: int = 500) -> str:
