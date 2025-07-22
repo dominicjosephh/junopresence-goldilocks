@@ -4,7 +4,6 @@ import os
 import openai
 
 def generate_reply(messages, personality="Base", max_tokens=150):
-    # Defensive validation, mirroring main.py
     if not isinstance(messages, list) or not messages:
         raise ValueError("messages must be a non-empty list")
     if not isinstance(messages[-1], dict) or "content" not in messages[-1]:
@@ -20,7 +19,6 @@ def generate_reply(messages, personality="Base", max_tokens=150):
     print(f"Calling AI with personality={personality}, max_tokens={max_tokens}")
     response = get_together_ai_reply(messages, personality, max_tokens)
     if response is None:
-        # fallback logic for reliability
         return "Sorry, I could not process your request."
 
     optimized_response = optimize_response_length(response)
