@@ -1,26 +1,47 @@
-from ai_cache import get_cache_key, get_cached_response, cache_response
-from utils import get_together_ai_reply, optimize_response_length
 import os
-import openai
+import json
+import random
+import hashlib
+import time
+import requests
+from .ai_cache import get_cache_key, get_cached_response, cache_response
 
-def generate_reply(messages, personality="Base", max_tokens=150):
-    if not isinstance(messages, list) or not messages:
-        raise ValueError("messages must be a non-empty list")
-    if not isinstance(messages[-1], dict) or "content" not in messages[-1]:
-        raise ValueError("Last message must be a dict with a 'content' key")
+TOGETHER_AI_API_KEY = os.getenv("TOGETHER_AI_API_KEY")
+TOGETHER_AI_BASE_URL = "https://api.together.xyz/v1"
 
-    prompt = messages[-1]["content"]
-    cache_key = get_cache_key(prompt, personality)
-
+def generate_chat_response(messages):
+    cache_key = get_cache_key(messages)
     cached = get_cached_response(cache_key)
     if cached:
         return cached
 
-    print(f"Calling AI with personality={personality}, max_tokens={max_tokens}")
-    response = get_together_ai_reply(messages, personality, max_tokens)
-    if response is None:
-        return "Sorry, I could not process your request."
+    headers = {
+        "Authorization": f"Bearer {TOGETHER_AI_API_KEY}",
+        "Content-Type": "application/json"
+    }
 
-    optimized_response = optimize_response_length(response)
-    cache_response(cache_key, optimized_response)
-    return optimized_response
+    payload = {
+        "model": "mistral-7b-instruct-v0.1",
+        "messages": messages,
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "max_tokens": 250
+    }
+
+    response = requests.post(
+        f"{TOGETHER_AI_BASE_URL}/chat/completions",
+        headers=headers,
+        json=payload
+    )
+
+    try:
+        response.raise_for_status()
+        result = response.json()
+        reply = result["choices"][0]["message"]["content"]
+        cache_response(cache_key, reply)
+        return reply
+    except Exception as e:
+        print("🔥 LLM request failed:", e)
+        print("🧾 Response text:", response.text)
+        return "Sorry, I had trouble generating a response."
+
