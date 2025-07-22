@@ -37,6 +37,7 @@ def generate_chat_response(messages):
     try:
         response.raise_for_status()
         result = response.json()
+        print("🟢 Raw TogetherAI response:", json.dumps(result, indent=2))  # <--- LOG RAW RESPONSE
         reply = result["choices"][0]["message"]["content"]
         cache_response(cache_key, reply)
         return reply
@@ -44,4 +45,3 @@ def generate_chat_response(messages):
         print("🔥 LLM request failed:", e)
         print("🧾 Response text:", response.text)
         return "Sorry, I had trouble generating a response."
-
