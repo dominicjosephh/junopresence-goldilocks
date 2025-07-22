@@ -55,7 +55,6 @@ def get_fallback_response(personality="Base", user_input=""):
             "My response system is running a bit slow today, but I'm here. What's on your mind?",
             "Having some technical delays, but I'm still ready to chat! How can I help?",
         ],
-        # ... (add the rest from backend.py as needed)
     }
     responses = fallback_responses.get(personality, fallback_responses["Base"])
     return random.choice(responses)
