@@ -89,7 +89,8 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
             return reply
         else:
             return None
-    except Exception:
+    except Exception as e:
+        print(f"Together AI error: {e}")
         return None
 
 def get_llama3_reply(prompt, chat_history=None, personality="Base"):
@@ -120,8 +121,8 @@ def get_llama3_reply(prompt, chat_history=None, personality="Base"):
                 response = response.replace(full_prompt, "").strip()
             cache_response(cache_key, response)
             return response
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Llama3 error: {e}")
 
     fallback = get_fallback_response(personality, prompt)
     return fallback
