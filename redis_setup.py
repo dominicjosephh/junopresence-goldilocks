@@ -1,8 +1,14 @@
 import os
 import time
-import psutil
 import hashlib
 import pickle
+
+# Optional dependencies - gracefully handle missing modules
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 
 redis_client = None
 PERFORMANCE_MONITORING_ENABLED = True

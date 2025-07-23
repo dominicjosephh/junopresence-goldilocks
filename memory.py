@@ -4,12 +4,18 @@ import re
 import hashlib
 from datetime import datetime
 from typing import List, Dict
+import utf8_validation
+import logging
+
+logger = logging.getLogger(__name__)
 
 MEMORY_DB_PATH = "juno_memory.db"
 
 def get_memory_conn():
     conn = sqlite3.connect(MEMORY_DB_PATH, timeout=30)
     conn.execute('PRAGMA journal_mode=WAL;')
+    # Ensure UTF-8 encoding for text storage
+    conn.execute('PRAGMA encoding="UTF-8";')
     return conn
 
 class AdvancedMemorySystem:
@@ -104,26 +110,41 @@ class AdvancedMemorySystem:
 
     def store_conversation(self, user_input: str, juno_response: str, voice_mode: str = "Base") -> int:
         try:
+            # Sanitize all text inputs to ensure UTF-8 safety
+            user_input = utf8_validation.sanitize_text(user_input)
+            juno_response = utf8_validation.sanitize_text(juno_response)
+            voice_mode = utf8_validation.sanitize_text(voice_mode)
+            
             conn = get_memory_conn()
             cursor = conn.cursor()
             conv_text = f"{user_input}|{juno_response}"
-            conv_hash = hashlib.md5(conv_text.encode()).hexdigest()
+            conv_hash = hashlib.md5(conv_text.encode('utf-8')).hexdigest()
             keywords = self.extract_keywords(user_input + " " + juno_response)
             emotional_tone = self.detect_emotional_tone(user_input)
             importance_score = min(2.0, (len(user_input) / 100) + len(keywords) * 0.1 + (1.5 if emotional_tone in ['positive', 'negative'] else 1.0))
+            
             cursor.execute("""
                 INSERT INTO conversations 
                 (timestamp, user_input, juno_response, voice_mode, conversation_hash, context_keywords, emotional_tone, importance_score)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                datetime.utcnow().isoformat(), user_input, juno_response, voice_mode, conv_hash, ','.join(keywords), emotional_tone, importance_score
+                datetime.utcnow().isoformat(), 
+                user_input, 
+                juno_response, 
+                voice_mode, 
+                conv_hash, 
+                ','.join(keywords), 
+                emotional_tone, 
+                importance_score
             ))
             conversation_id = cursor.lastrowid
             conn.commit()
             conn.close()
+            logger.info(f"Stored conversation {conversation_id} safely")
             return conversation_id
         except Exception as e:
-            print(f"❌ Memory storage error: {e}")
+            utf8_validation.log_encoding_issue("memory_store_conversation", locals(), e)
+            logger.error(f"Memory storage error: {e}")
             return -1
 
     def get_user_summary(self) -> Dict:
