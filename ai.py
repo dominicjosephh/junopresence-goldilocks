@@ -6,7 +6,6 @@ TOGETHER_AI_API_KEY = os.getenv("TOGETHER_AI_API_KEY")
 TOGETHER_AI_BASE_URL = "https://api.together.xyz/v1"
 
 def get_together_ai_reply(messages, personality="Base", max_tokens=150):
-    # Add an emotional, expressive system prompt up front if not already present
     system_message = {
         "role": "system",
         "content": (
@@ -38,11 +37,10 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
             headers=headers,
             json=payload
         )
-        print(f"🟪 TogetherAI STATUS: {response.status_code}")
-        print("🟦 TogetherAI RAW RESPONSE:", response.text)
+        print("RAW RESPONSE TEXT:", response.text)  # <<< Add this line!
         response.raise_for_status()
         data = response.json()
-        print("🟧 TogetherAI PARSED JSON:", json.dumps(data, indent=2))
+        print("PARSED JSON:", data)  # <<< Add this line!
         if "choices" in data and data["choices"]:
             print("✅ Got choices:", data["choices"])
             return data["choices"][0]["message"]["content"]
