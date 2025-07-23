@@ -56,55 +56,48 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# UTF-8 Error Handling Middleware
+# Add this after: app = FastAPI()
+# But before your routes
+
+from starlette.middleware.base import BaseHTTPMiddleware
+
 class UTF8ErrorHandlingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         try:
-            # Check if it's a binary upload
             content_type = request.headers.get('content-type', '')
             
-            # For multipart uploads, let FastAPI handle it
+            # Let multipart uploads pass through
             if 'multipart/form-data' in content_type:
                 response = await call_next(request)
                 return response
             
-            # For JSON requests, try to catch UTF-8 errors early
+            # Check JSON requests for UTF-8 errors
             if 'application/json' in content_type:
                 try:
-                    # Try to read the body
                     body = await request.body()
-                    # Try to decode as JSON
-                    try:
-                        json.loads(body)
-                    except UnicodeDecodeError as e:
-                        logger.error(f"UTF-8 decode error in JSON body: {e}")
-                        return JSONResponse(
-                            status_code=400,
-                            content={
-                                "error": "ENCODING_ERROR",
-                                "message": "Invalid UTF-8 encoding in request body",
-                                "details": f"Error at byte position {e.start}",
-                                "solution": "Use base64 encoding for binary data in JSON",
-                                "recoverable": True
-                            }
-                        )
-                except Exception as e:
-                    logger.error(f"Error reading request body: {e}")
+                    json.loads(body)  # This will raise UnicodeDecodeError if invalid
+                except UnicodeDecodeError as e:
+                    logger.error(f"UTF-8 decode error: {e}")
+                    return JSONResponse(
+                        status_code=400,
+                        content={
+                            "error": "ENCODING_ERROR",
+                            "message": "Invalid UTF-8 in request",
+                            "solution": "Use base64 for binary data"
+                        }
+                    )
             
             response = await call_next(request)
             return response
             
         except UnicodeDecodeError as e:
-            logger.error(f"UTF-8 decode error: {e}")
             return JSONResponse(
                 status_code=400,
-                content={
-                    "error": "ENCODING_ERROR",
-                    "message": "Invalid UTF-8 encoding detected",
-                    "details": str(e),
-                    "recoverable": True
-                }
+                content={"error": "UTF-8 encoding error"}
             )
+
+app.add_middleware(UTF8ErrorHandlingMiddleware)
+
         except Exception as e:
             logger.error(f"Middleware error: {e}")
             return JSONResponse(

@@ -13,6 +13,50 @@ from fastapi.responses import JSONResponse
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Add to your existing utf8_utils.py
+
+class UTF8Utils:
+    @staticmethod
+    def is_binary_audio_data(data: bytes) -> bool:
+        """Detect if bytes represent binary audio data"""
+        if len(data) < 4:
+            return False
+        
+        # Check for common audio file signatures
+        audio_signatures = [
+            b'RIFF',  # WAV
+            b'ID3',   # MP3
+            b'\xff\xfb',  # MP3
+            b'\xff\xf3',  # MP3
+            b'OggS',  # OGG
+            b'fLaC',  # FLAC
+        ]
+        
+        return any(data.startswith(sig) for sig in audio_signatures)
+    
+    @staticmethod
+    def safe_decode_with_fallback(data: bytes,
+                                 fallback_encoding: str = 'latin-1') -> tuple[str, str]:
+        """Safely decode bytes with multiple encoding attempts"""
+        if not data:
+            return "", "utf-8"
+        
+        # Try UTF-8 first
+        try:
+            return data.decode('utf-8'), 'utf-8'
+        except UnicodeDecodeError:
+            pass
+        
+        # Try other encodings
+        for encoding in ['latin-1', 'cp1252', 'iso-8859-1']:
+            try:
+                return data.decode(encoding), encoding
+            except UnicodeDecodeError:
+                continue
+        
+        # Final fallback
+        return data.decode('utf-8', errors='replace'), 'utf-8-replace'
+
 def sanitize_utf8_string(text: str, replacement_char: str = "?") -> str:
     """
     Aggressively sanitize a string to ensure it's valid UTF-8.
