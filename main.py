@@ -62,3 +62,8 @@ async def process_audio(request: AudioRequest):
             "music_command": getattr(request, "music_command", None),
             "truncated": 0
         }
+
+# ADD THIS TO THE BOTTOM ⬇️⬇️⬇️⬇️⬇️
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=5020, reload=False)
