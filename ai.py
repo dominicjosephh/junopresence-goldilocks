@@ -1,6 +1,10 @@
 import os
 import json
 import requests
+from dotenv import load_dotenv
+
+# Ensure .env variables are loaded!
+load_dotenv()
 
 TOGETHER_AI_API_KEY = os.getenv("TOGETHER_AI_API_KEY")
 TOGETHER_AI_BASE_URL = "https://api.together.xyz/v1"
@@ -25,6 +29,8 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
         "top_p": 0.9,
         "max_tokens": max_tokens
     }
+
+    print("🟣 ENV API KEY:", TOGETHER_AI_API_KEY)
     print("🚀 PAYLOAD:", json.dumps(payload, indent=2))
     headers = {
         "Authorization": f"Bearer {TOGETHER_AI_API_KEY}",
@@ -52,6 +58,11 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
         else:
             print("❌ No choices in response! Full data dump:", data)
             return "Sorry, I didn't get a reply from TogetherAI."
+    except requests.exceptions.RequestException as e:
+        if hasattr(e, "response") and e.response is not None:
+            print("❌ HTTP Exception:", e.response.text)
+        print(f"❌ Exception from TogetherAI: {str(e)}")
+        return f"Error from TogetherAI: {str(e)}"
     except Exception as e:
         print(f"❌ Exception from TogetherAI: {str(e)}")
         return f"Error from TogetherAI: {str(e)}"
