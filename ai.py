@@ -1,13 +1,18 @@
 import os
 import json
 import requests
+from utf8_utils import sanitize_ai_response, log_utf8_debug_info
+import logging
+
+logger = logging.getLogger(__name__)
 
 TOGETHER_AI_API_KEY = os.getenv("TOGETHER_AI_API_KEY")
 TOGETHER_AI_BASE_URL = "https://api.together.xyz/v1"
 
 def get_together_ai_reply(messages, personality="Base", max_tokens=150):
     """
-    Calls TogetherAI LLM and returns only reply text (never binary).
+    Calls TogetherAI LLM and returns UTF-8 safe reply text.
+    Enhanced with comprehensive UTF-8 validation and error handling.
     """
     system_message = {
         "role": "system",
@@ -31,19 +36,47 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
         "Authorization": f"Bearer {TOGETHER_AI_API_KEY}",
         "Content-Type": "application/json"
     }
+    
     try:
         response = requests.post(
             f"{TOGETHER_AI_BASE_URL}/chat/completions",
             headers=headers,
-            json=payload
+            json=payload,
+            timeout=30  # Add timeout to prevent hanging
         )
         response.raise_for_status()
-        data = response.json()
-        # Safely parse the reply (never include non-utf8 data)
+        
+        # Parse JSON response with UTF-8 safety
+        try:
+            data = response.json()
+        except (json.JSONDecodeError, UnicodeDecodeError) as json_error:
+            logger.error(f"JSON parsing error from TogetherAI: {json_error}")
+            log_utf8_debug_info(response.text, json_error)
+            return sanitize_ai_response("I encountered a response parsing error. Please try again.")
+        
+        # Extract and sanitize the AI reply
         if "choices" in data and data["choices"]:
-            return data["choices"][0]["message"]["content"]
+            raw_reply = data["choices"][0]["message"]["content"]
+            
+            # Apply aggressive UTF-8 sanitization
+            try:
+                sanitized_reply = sanitize_ai_response(raw_reply)
+                logger.info(f"AI reply successfully sanitized: {len(sanitized_reply)} chars")
+                return sanitized_reply
+                
+            except Exception as sanitize_error:
+                logger.error(f"AI response sanitization failed: {sanitize_error}")
+                log_utf8_debug_info(raw_reply, sanitize_error)
+                return sanitize_ai_response("")  # Empty string will trigger fallback
         else:
-            return "Sorry, I couldn't generate a response."
+            logger.warning("No choices in TogetherAI response")
+            return sanitize_ai_response("Sorry, I couldn't generate a response.")
+            
+    except requests.exceptions.RequestException as req_error:
+        logger.error(f"Request error from TogetherAI: {req_error}")
+        return sanitize_ai_response(f"I'm having trouble connecting to my AI service. Please try again.")
+        
     except Exception as e:
-        print("Error from TogetherAI:", str(e))
-        return f"Error from TogetherAI: {str(e)}"
+        logger.error(f"Unexpected error in get_together_ai_reply: {e}")
+        log_utf8_debug_info(str(e), e)
+        return sanitize_ai_response("I encountered an unexpected error. Please try again.")
