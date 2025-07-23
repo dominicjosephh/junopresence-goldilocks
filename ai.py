@@ -41,6 +41,10 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
         response.raise_for_status()
         data = response.json()
         print("🟢 PARSED JSON:", data)
+        # Defensive: print error if present
+        if "error" in data:
+            print("❌ API Error:", data["error"])
+            return f"Error from TogetherAI: {data['error']}"
         if "choices" in data and data["choices"]:
             reply = data["choices"][0]["message"]["content"]
             print("✅ Got reply:", reply)
@@ -49,5 +53,5 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
             print("❌ No choices in response! Full data dump:", data)
             return "Sorry, I didn't get a reply from TogetherAI."
     except Exception as e:
-        print(f"❌ Error from TogetherAI: {str(e)}")
+        print(f"❌ Exception from TogetherAI: {str(e)}")
         return f"Error from TogetherAI: {str(e)}"
