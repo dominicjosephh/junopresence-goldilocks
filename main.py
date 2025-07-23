@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from fastapi.staticfiles import StaticFiles
 
 from ai import get_together_ai_reply
+from fastapi import File, UploadFile
+from fastapi.responses import JSONResponse
 
 load_dotenv()
 
@@ -27,6 +29,34 @@ class AudioRequest(BaseModel):
     personality: str = "Base"
     audio_url: str = None
     music_command: str = None
+
+@app.post("/api/convo_mode")
+async def convo_mode(audio: UploadFile = File(...)):
+    try:
+        # Save uploaded file
+        contents = await audio.read()
+        audio_path = f"temp_{audio.filename}"
+        with open(audio_path, "wb") as f:
+            f.write(contents)
+
+        # Here you would transcribe/process/send to LLM, etc.
+        # For demo, we'll just echo a fake reply:
+        reply = "I got your audio, bestie! Processing coming soon..."
+
+        # Optionally: generate TTS audio response, save as `output.wav`
+        # ...and return its path
+
+        return JSONResponse({
+            "reply": reply,
+            "audio_url": "/static/audio/output.wav"  # or whatever path if you generate TTS
+        })
+
+    except Exception as e:
+        print(f"❌ Error in convo_mode: {e}")
+        return JSONResponse(
+            {"reply": "", "audio_url": None, "error": str(e)},
+            status_code=500
+        )
 
 @app.post("/api/process_audio")
 async def process_audio(request: AudioRequest):
