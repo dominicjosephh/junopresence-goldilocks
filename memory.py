@@ -2,15 +2,26 @@ import os
 import sqlite3
 import re
 import hashlib
+import logging
 from datetime import datetime
 from typing import List, Dict
+from utils import safe_encode_utf8, sanitize_data_utf8, get_safe_fallback_response
+
+logger = logging.getLogger(__name__)
 
 MEMORY_DB_PATH = "juno_memory.db"
 
 def get_memory_conn():
-    conn = sqlite3.connect(MEMORY_DB_PATH, timeout=30)
-    conn.execute('PRAGMA journal_mode=WAL;')
-    return conn
+    """BULLETPROOF DATABASE CONNECTION with UTF-8 protection"""
+    try:
+        conn = sqlite3.connect(MEMORY_DB_PATH, timeout=30)
+        conn.execute('PRAGMA journal_mode=WAL;')
+        # Ensure UTF-8 encoding
+        conn.execute('PRAGMA encoding="UTF-8";')
+        return conn
+    except Exception as e:
+        logger.error(f"🚨 MEMORY DB CONNECTION ERROR: {e}")
+        raise
 
 class AdvancedMemorySystem:
     def __init__(self):
@@ -80,24 +91,39 @@ class AdvancedMemorySystem:
         conn.close()
 
     def extract_keywords(self, text: str) -> List[str]:
-        common_words = {'i', 'me', 'my', 'you', 'your', 'the', 'a', 'an', 'and', 'or', 'but','in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was','were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will','would', 'could', 'should', 'can', 'may', 'might', 'this', 'that', 'these','those', 'what', 'when', 'where', 'why', 'how', 'juno', 'hey', 'hi', 'hello'}
-        words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
-        keywords = [word for word in words if word not in common_words]
-        return list(set(keywords))
+        """BULLETPROOF KEYWORD EXTRACTION with UTF-8 protection"""
+        try:
+            safe_text = safe_encode_utf8(text) if text else ""
+            common_words = {'i', 'me', 'my', 'you', 'your', 'the', 'a', 'an', 'and', 'or', 'but','in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was','were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will','would', 'could', 'should', 'can', 'may', 'might', 'this', 'that', 'these','those', 'what', 'when', 'where', 'why', 'how', 'juno', 'hey', 'hi', 'hello'}
+            words = re.findall(r'\b[a-zA-Z]{3,}\b', safe_text.lower())
+            keywords = [safe_encode_utf8(word) for word in words if word not in common_words]
+            return list(set(keywords))
+        except Exception as e:
+            logger.error(f"🚨 KEYWORD EXTRACTION ERROR: {e}")
+            return []
 
     def detect_emotional_tone(self, text: str) -> str:
-        positive_words = ['happy', 'excited', 'great', 'awesome', 'love', 'amazing', 'fantastic', 'good', 'yes', 'yeah', 'cool']
-        negative_words = ['sad', 'frustrated', 'angry', 'hate', 'terrible', 'awful', 'bad', 'no', 'annoyed', 'stressed']
-        question_words = ['what', 'how', 'when', 'where', 'why', 'who', 'which']
-        text_lower = text.lower()
-        positive_count = sum(1 for word in positive_words if word in text_lower)
-        negative_count = sum(1 for word in negative_words if word in text_lower)
-        question_count = sum(1 for word in question_words if word in text_lower)
-        if text.endswith('?') or question_count > 0:
-            return 'questioning'
-        elif positive_count > negative_count:
-            return 'positive'
-        elif negative_count > positive_count:
+        """BULLETPROOF EMOTIONAL TONE DETECTION with UTF-8 protection"""
+        try:
+            safe_text = safe_encode_utf8(text) if text else ""
+            positive_words = ['happy', 'excited', 'great', 'awesome', 'love', 'amazing', 'fantastic', 'good', 'yes', 'yeah', 'cool']
+            negative_words = ['sad', 'frustrated', 'angry', 'hate', 'terrible', 'awful', 'bad', 'no', 'annoyed', 'stressed']
+            question_words = ['what', 'how', 'when', 'where', 'why', 'who', 'which']
+            text_lower = safe_text.lower()
+            positive_count = sum(1 for word in positive_words if word in text_lower)
+            negative_count = sum(1 for word in negative_words if word in text_lower)
+            question_count = sum(1 for word in question_words if word in text_lower)
+            if safe_text.endswith('?') or question_count > 0:
+                return 'questioning'
+            elif positive_count > negative_count:
+                return 'positive'
+            elif negative_count > positive_count:
+                return 'negative'
+            else:
+                return 'neutral'
+        except Exception as e:
+            logger.error(f"🚨 EMOTIONAL TONE DETECTION ERROR: {e}")
+            return 'neutral'
             return 'negative'
         else:
             return 'neutral'
