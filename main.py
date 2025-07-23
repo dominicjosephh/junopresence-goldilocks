@@ -63,3 +63,7 @@ async def get_audio(audio_filename: str):
 @app.get("/")
 def root():
     return {"status": "Juno backend running!"}
+    
+    if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=5020, reload=False)
