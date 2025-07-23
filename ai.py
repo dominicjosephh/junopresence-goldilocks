@@ -6,15 +6,20 @@ TOGETHER_AI_API_KEY = os.getenv("TOGETHER_AI_API_KEY")
 TOGETHER_AI_BASE_URL = "https://api.together.xyz/v1"
 
 def get_together_ai_reply(messages, personality="Base", max_tokens=150):
+    # Add an emotional, expressive system prompt up front if not already present
     system_message = {
         "role": "system",
-        "content": "You are a friendly, expressive, and emotionally-aware AI. Respond with warmth and natural conversation. If the user asks about feelings, tone, or emotions, reply in a vivid, human style."
+        "content": (
+            "You are a friendly, expressive, and emotionally-aware AI assistant. "
+            "Respond to the user in a warm, vivid, and natural conversational style. "
+            "If the user asks about feelings or mood, answer in a human, relatable way."
+        )
     }
     if not messages or messages[0].get("role") != "system":
         messages = [system_message] + messages
 
     payload = {
-        "model": "llama-3-8b-chat",
+        "model": "mistralai/Mistral-7B-Instruct-v0.3",
         "messages": messages,
         "temperature": 0.7,
         "top_p": 0.9,
