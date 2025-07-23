@@ -1,39 +1,65 @@
-=from fastapi import FastAPI, UploadFile, File, Form, Request
-from fastapi.responses import JSONResponse, FileResponse
-from pydantic import BaseModel
-from typing import Optional
 import os
-from ai import get_llm_reply, generate_tts  # you will create these
+from fastapi import FastAPI, Request, UploadFile, File
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from ai import get_together_ai_reply
+import uuid
 
 load_dotenv()
+
 app = FastAPI()
 
-AUDIO_OUTPUT_DIR = "audio_files"
+# CORS: Allow all for development, restrict in prod!
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Change this in prod!
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+AUDIO_OUTPUT_DIR = "audio_output"
 os.makedirs(AUDIO_OUTPUT_DIR, exist_ok=True)
 
-class ChatRequest(BaseModel):
-    message: str
-    personality: Optional[str] = "Base"
+@app.post("/api/process_audio")
+async def process_audio(request: Request):
+    """
+    Handles chat and returns text + audio_url if audio was generated.
+    """
+    data = await request.json()
+    messages = data.get("messages")
+    personality = data.get("personality", "Base")
+    max_tokens = data.get("max_tokens", 150)
 
-class ChatResponse(BaseModel):
-    reply: str
-    audio_url: Optional[str] = None
+    reply_text = get_together_ai_reply(messages, personality, max_tokens)
 
-@app.post("/api/process_audio", response_model=ChatResponse)
-async def process_audio(req: ChatRequest):
-    try:
-        reply_text = get_llm_reply(req.message, personality=req.personality)
-        # Generate TTS and save file (filename based on a hash or uuid, for simplicity use "output.mp3")
-        audio_filename = generate_tts(reply_text, AUDIO_OUTPUT_DIR)
-        audio_url = f"/audio/{audio_filename}"
-        return ChatResponse(reply=reply_text, audio_url=audio_url)
-    except Exception as e:
-        return JSONResponse(content={"reply": "", "audio_url": None, "error": str(e)}, status_code=500)
+    # --- DUMMY AUDIO GENERATION ---
+    # If you have TTS, generate audio file from reply_text here
+    # For now, just fake a filename:
+    audio_filename = f"{uuid.uuid4()}.wav"
+    audio_path = os.path.join(AUDIO_OUTPUT_DIR, audio_filename)
+    # with open(audio_path, 'wb') as f:
+    #     f.write(audio_bytes)   # <-- if you had bytes
 
-@app.get("/audio/{filename}")
-async def get_audio(filename: str):
-    filepath = os.path.join(AUDIO_OUTPUT_DIR, filename)
-    if not os.path.isfile(filepath):
-        return JSONResponse(content={"error": "File not found"}, status_code=404)
-    return FileResponse(filepath, media_type="audio/mpeg")
+    # Return only URL to audio, NOT the bytes
+    response = {
+        "reply": reply_text,
+        "audio_url": f"/api/audio/{audio_filename}",
+        "error": None
+    }
+    return JSONResponse(response)
+
+@app.get("/api/audio/{audio_filename}")
+async def get_audio(audio_filename: str):
+    """
+    Serves audio file by filename (WAV/MP3/whatever).
+    """
+    audio_path = os.path.join(AUDIO_OUTPUT_DIR, audio_filename)
+    if not os.path.isfile(audio_path):
+        return JSONResponse({"error": "File not found"}, status_code=404)
+    return FileResponse(audio_path, media_type="audio/wav")
+
+@app.get("/")
+def root():
+    return {"status": "Juno backend running!"}
