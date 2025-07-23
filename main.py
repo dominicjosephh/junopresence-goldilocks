@@ -3,6 +3,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from fastapi.staticfiles import StaticFiles
 
 from ai import get_together_ai_reply
 
@@ -40,7 +41,7 @@ async def process_audio(request: AudioRequest):
         if not isinstance(last_msg, dict) or "content" not in last_msg:
             raise ValueError("Last message must be a dict with a 'content' key")
 
-        reply = get_together_ai_reply(
+        reply, audio_url = get_together_ai_reply(
             messages=request.messages,
             personality=request.personality,
             max_tokens=150
@@ -49,7 +50,7 @@ async def process_audio(request: AudioRequest):
         return {
             "reply": reply if isinstance(reply, str) and reply else "",
             "error": None,
-            "audio_url": request.audio_url,
+            "audio_url": audio_url,
             "music_command": request.music_command,
             "truncated": 0
         }
@@ -62,6 +63,9 @@ async def process_audio(request: AudioRequest):
             "music_command": getattr(request, "music_command", None),
             "truncated": 0
         }
+
+# Serve static files for audio playback
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ADD THIS TO THE BOTTOM ⬇️⬇️⬇️⬇️⬇️
 if __name__ == "__main__":
