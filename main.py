@@ -98,15 +98,6 @@ class UTF8ErrorHandlingMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(UTF8ErrorHandlingMiddleware)
 
-        except Exception as e:
-            logger.error(f"Middleware error: {e}")
-            return JSONResponse(
-                status_code=500,
-                content=get_emergency_fallback_response()
-            )
-
-app.add_middleware(UTF8ErrorHandlingMiddleware)
-
 # Include your existing routers
 app.include_router(convo_mode_router)  # Your existing convo_mode endpoints
 
@@ -346,12 +337,11 @@ async def process_audio_enhanced_endpoint(
 # Add WebSocket support if you want the real-time conversation mode
 try:
     from fastapi import WebSocket
-    from conversation_mode import websocket_endpoint
-    
+
     @app.websocket("/ws/conversation/{user_id}")
     async def conversation_websocket(websocket: WebSocket, user_id: str):
-        """WebSocket endpoint for real-time conversation mode"""
-        await websocket_endpoint(websocket, user_id)
+        """WebSocket endpoint for real-time conversation mode (not yet implemented)"""
+        await websocket.close(code=1011, reason="WebSocket conversation mode not implemented")
 except ImportError:
     logger.info("WebSocket conversation mode not available")
 
