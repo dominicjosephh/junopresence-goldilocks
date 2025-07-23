@@ -1,89 +1,64 @@
+import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ValidationError
-from typing import Optional
-from utils import get_together_ai_reply
-import uvicorn
+from pydantic import BaseModel
+from dotenv import load_dotenv
+
+from ai import get_together_ai_reply
+
+load_dotenv()
 
 app = FastAPI()
 
-# ---- CORS Middleware ----
+# Optional: update origins as needed
+origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ---- AudioRequest Model ----
 class AudioRequest(BaseModel):
     messages: list
     personality: str = "Base"
-    audio_url: Optional[str] = None
-    music_command: Optional[str] = None
+    audio_url: str = None
+    music_command: str = None
 
-# ---- Startup Event ----
-@app.on_event("startup")
-async def startup_event():
-    print("✅ Starting Juno Presence AI Backend...")
-    print("🎭 Voice Mode: Base")
-    print("📦 All modules loaded successfully")
-
-# ---- Process Audio Endpoint ----
 @app.post("/api/process_audio")
 async def process_audio(request: AudioRequest):
     try:
         print(f"Incoming request with personality: {request.personality}")
         print(f"Incoming messages: {request.messages}")
 
-        # Robust input validation + always call LLM for debug!
+        # Validate messages
         if not isinstance(request.messages, list) or not request.messages:
-            print("⚠️ messages missing or empty! Using fallback.")
-            messages = [{"role": "user", "content": "Say something witty!"}]
-        else:
-            messages = request.messages
+            raise ValueError("messages must be a non-empty list")
+        last_msg = request.messages[-1]
+        if not isinstance(last_msg, dict) or "content" not in last_msg:
+            raise ValueError("Last message must be a dict with a 'content' key")
 
-        last_msg = messages[-1]
-        if not isinstance(last_msg, dict) or "content" not in last_msg or not last_msg["content"]:
-            print("⚠️ Last message invalid, adding fallback content.")
-            messages[-1] = {"role": "user", "content": "Say something clever!"}
-
-        print("🟩 About to call get_together_ai_reply() with:", messages)
         reply = get_together_ai_reply(
-            messages=messages,
+            messages=request.messages,
             personality=request.personality,
             max_tokens=150
         )
-        print("🟦 LLM reply:", reply)
 
         return {
             "reply": reply if isinstance(reply, str) and reply else "",
             "error": None,
-            "audio_url": getattr(request, "audio_url", None),
-            "music_command": getattr(request, "music_command", None),
-            "truncated": 0
-        }
-
-    except (ValidationError, ValueError) as e:
-        print(f"❌ Validation error in process_audio: {e}")
-        return {
-            "reply": "Sorry, I encountered a validation error.",
-            "error": str(e),
-            "audio_url": getattr(request, "audio_url", None),
-            "music_command": getattr(request, "music_command", None),
+            "audio_url": request.audio_url,
+            "music_command": request.music_command,
             "truncated": 0
         }
     except Exception as e:
-        print(f"🔥 Unexpected error in process_audio: {e}")
+        print(f"❌ Error in process_audio: {e}")
         return {
-            "reply": "Sorry, something went wrong on the server.",
+            "reply": "",
             "error": str(e),
             "audio_url": getattr(request, "audio_url", None),
             "music_command": getattr(request, "music_command", None),
             "truncated": 0
         }
-
-# ---- (Optional) Uvicorn Entry ----
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=5020)

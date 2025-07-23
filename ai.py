@@ -3,11 +3,12 @@ import json
 import requests
 from dotenv import load_dotenv
 
-# Ensure .env variables are loaded!
+# Load environment variables
 load_dotenv()
 
 TOGETHER_AI_API_KEY = os.getenv("TOGETHER_AI_API_KEY")
 TOGETHER_AI_BASE_URL = "https://api.together.xyz/v1"
+TOGETHER_AI_TIMEOUT = 60  # seconds
 
 def get_together_ai_reply(messages, personality="Base", max_tokens=150):
     system_message = {
@@ -25,9 +26,10 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
     payload = {
         "model": "mistralai/Mistral-7B-Instruct-v0.3",
         "messages": messages,
+        "max_tokens": max_tokens,
         "temperature": 0.7,
         "top_p": 0.9,
-        "max_tokens": max_tokens
+        "stream": False
     }
 
     print("🟣 ENV API KEY:", TOGETHER_AI_API_KEY)
@@ -41,13 +43,13 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
         response = requests.post(
             f"{TOGETHER_AI_BASE_URL}/chat/completions",
             headers=headers,
-            json=payload
+            json=payload,
+            timeout=TOGETHER_AI_TIMEOUT
         )
         print("🟢 RAW RESPONSE TEXT:", response.text)
         response.raise_for_status()
         data = response.json()
         print("🟢 PARSED JSON:", data)
-        # Defensive: print error if present
         if "error" in data:
             print("❌ API Error:", data["error"])
             return f"Error from TogetherAI: {data['error']}"
