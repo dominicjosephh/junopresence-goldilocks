@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from fastapi.staticfiles import StaticFiles
-
+from convo_mode import router as convo_mode_router
 from ai import get_together_ai_reply
 from fastapi import File, UploadFile
 from fastapi.responses import JSONResponse
@@ -12,6 +12,8 @@ from fastapi.responses import JSONResponse
 load_dotenv()
 
 app = FastAPI()
+
+app.include_router(convo_mode_router)
 
 # Optional: update origins as needed
 origins = ["*"]

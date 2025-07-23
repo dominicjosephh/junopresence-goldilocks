@@ -1,33 +1,23 @@
-from fastapi import UploadFile, File
-from ai import transcribe_with_whisper, get_together_ai_reply  # see below for helper
+from fastapi import APIRouter, UploadFile, File
+from fastapi.responses import JSONResponse
 
-@app.post("/api/convo_mode")
+router = APIRouter()
+
+@router.post("/api/convo_mode")
 async def convo_mode(audio: UploadFile = File(...)):
     try:
-        # Save uploaded audio file
-        audio_path = "static/audio/user_input.wav"
+        contents = await audio.read()
+        audio_path = f"temp_{audio.filename}"
         with open(audio_path, "wb") as f:
-            f.write(await audio.read())
-        
-        # Transcribe audio (Whisper STT)
-        transcript = transcribe_with_whisper(audio_path)
-        print("User transcript:", transcript)
+            f.write(contents)
 
-        # LLM reply + ElevenLabs voice
-        messages = [{"role": "user", "content": transcript}]
-        reply, audio_url = get_together_ai_reply(messages=messages, personality="Base", max_tokens=150)
+        # Here you could transcribe/process/etc.
+        reply = "I got your audio, bestie! Processing coming soon..."
 
-        return {
-            "reply": reply if isinstance(reply, str) and reply else "",
-            "transcript": transcript,
-            "audio_url": audio_url,
-            "error": None
-        }
+        return JSONResponse({
+            "reply": reply,
+            "audio_url": "/static/audio/output.wav"  # Placeholder path
+        })
     except Exception as e:
-        print("❌ Error in convo_mode:", e)
-        return {
-            "reply": "",
-            "transcript": "",
-            "audio_url": None,
-            "error": str(e)
-        }
+        print(f"❌ Error in convo_mode: {e}")
+        return JSONResponse({"reply": "", "audio_url": None, "error": str(e)}, status_code=500)
