@@ -1,96 +1,287 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 import os
-import ai  # This is your ai.py module
+import json
+import base64
+import logging
+from starlette.middleware.base import BaseHTTPMiddleware
+import datetime
+
+# Import your existing modules
+import ai
+from convo_mode import router as convo_mode_router  # Your existing convo_mode
+from process_audio import process_audio_enhanced  # Your existing process_audio
+from music import handle_music_command  # Your existing music module
+
+# Import UTF-8 utilities
+from utf8_utils import (
+    create_utf8_safe_json_response,
+    sanitize_utf8_dict,
+    get_emergency_fallback_response,
+    log_utf8_debug_info,
+    sanitize_ai_response,
+    UTF8Utils  # Add this if you implement the class from my utf8_utils
+)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-app = FastAPI()
+app = FastAPI(title="JunoPresence Emotion AI Backend", version="2.0.0")
 
-# Allow all CORS origins for dev (change for prod)
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Change for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# UTF-8 Error Handling Middleware
+class UTF8ErrorHandlingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        try:
+            # Check if it's a binary upload
+            content_type = request.headers.get('content-type', '')
+            
+            # For multipart uploads, let FastAPI handle it
+            if 'multipart/form-data' in content_type:
+                response = await call_next(request)
+                return response
+            
+            # For JSON requests, try to catch UTF-8 errors early
+            if 'application/json' in content_type:
+                try:
+                    # Try to read the body
+                    body = await request.body()
+                    # Try to decode as JSON
+                    try:
+                        json.loads(body)
+                    except UnicodeDecodeError as e:
+                        logger.error(f"UTF-8 decode error in JSON body: {e}")
+                        return JSONResponse(
+                            status_code=400,
+                            content={
+                                "error": "ENCODING_ERROR",
+                                "message": "Invalid UTF-8 encoding in request body",
+                                "details": f"Error at byte position {e.start}",
+                                "solution": "Use base64 encoding for binary data in JSON",
+                                "recoverable": True
+                            }
+                        )
+                except Exception as e:
+                    logger.error(f"Error reading request body: {e}")
+            
+            response = await call_next(request)
+            return response
+            
+        except UnicodeDecodeError as e:
+            logger.error(f"UTF-8 decode error: {e}")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "ENCODING_ERROR",
+                    "message": "Invalid UTF-8 encoding detected",
+                    "details": str(e),
+                    "recoverable": True
+                }
+            )
+        except Exception as e:
+            logger.error(f"Middleware error: {e}")
+            return JSONResponse(
+                status_code=500,
+                content=get_emergency_fallback_response()
+            )
+
+app.add_middleware(UTF8ErrorHandlingMiddleware)
+
+# Include your existing routers
+app.include_router(convo_mode_router)  # Your existing convo_mode endpoints
+
+# Request/Response Models
 class AudioProcessRequest(BaseModel):
     messages: List[Dict[str, Any]] = Field(..., description="List of message objects")
     personality: str = Field("Base", description="Personality type for the AI")
     max_tokens: int = Field(150, description="Maximum number of tokens to generate")
+    audio_data: Optional[str] = Field(None, description="Base64 encoded audio data")
+    conversation_id: Optional[str] = Field(None, description="Conversation ID")
+    emotion_context: Optional[Dict[str, Any]] = Field(None, description="Emotion context")
+    
+    @validator('audio_data')
+    def validate_audio_data(cls, v):
+        if v:
+            try:
+                base64.b64decode(v)
+                return v
+            except Exception as e:
+                raise ValueError(f"Invalid base64 audio data: {e}")
+        return v
 
 class AudioProcessResponse(BaseModel):
     reply: str
     error: Optional[str] = None
-    audio_url: Optional[str] = None  # URL to audio file, not raw bytes
+    audio_url: Optional[str] = None
     music_command: Optional[str] = None
     truncated: int = 0
+    emotion_data: Optional[Dict[str, Any]] = None
+    voice_mode_adapted: Optional[bool] = None
 
 @app.get("/")
 async def root():
-    return {"message": "JunoPresence Backend is running."}
+    return create_utf8_safe_json_response({
+        "message": "JunoPresence Backend is running",
+        "version": "2.0.0",
+        "endpoints": {
+            "process_audio": "/api/process_audio",
+            "process_audio_enhanced": "/api/process_audio_enhanced",
+            "convo_mode": "/api/convo_mode",
+            "health": "/health"
+        }
+    })
 
+@app.get("/health")
+async def health_check():
+    return create_utf8_safe_json_response({
+        "status": "healthy",
+        "utf8_handler": "active",
+        "timestamp": str(datetime.datetime.now())
+    })
+
+# Your existing process_audio endpoint with UTF-8 fixes
 @app.post("/api/process_audio", response_model=AudioProcessResponse)
 async def process_audio(request: Request):
+    """
+    Original process_audio endpoint with UTF-8 safety
+    """
     try:
-        data = await request.json()
+        # Parse request data with UTF-8 safety
+        try:
+            raw_data = await request.json()
+        except Exception as json_error:
+            logger.error(f"Request JSON parsing error: {json_error}")
+            log_utf8_debug_info(str(json_error), json_error)
+            
+            emergency_response = get_emergency_fallback_response()
+            emergency_response["error"] = "Request parsing error - please check your input format"
+            return create_utf8_safe_json_response(emergency_response, status_code=400)
+        
+        # Sanitize input data
+        data = sanitize_utf8_dict(raw_data)
+        
+        # Extract parameters
         messages = data.get("messages", [])
         personality = data.get("personality", "Base")
         max_tokens = data.get("max_tokens", 150)
+        audio_data = data.get("audio_data")
         
-        # Call your LLM/AI function from ai.py
-        reply = ai.get_together_ai_reply(messages, personality, max_tokens)
+        # Handle base64 audio if provided
+        if audio_data:
+            try:
+                audio_bytes = base64.b64decode(audio_data)
+                # Add placeholder message for audio
+                messages.append({
+                    "role": "user",
+                    "content": f"[Audio message: {len(audio_bytes)} bytes]"
+                })
+            except Exception as e:
+                logger.error(f"Base64 decode error: {e}")
         
-        # Generate audio URL if needed (implement this in your ai module)
-        # audio_url = ai.generate_audio_url(reply)  # Returns URL string, not raw audio
-        audio_url = None  # Currently not generating audio
+        # Sanitize messages
+        sanitized_messages = []
+        for msg in messages:
+            if isinstance(msg, dict):
+                sanitized_messages.append(sanitize_utf8_dict(msg))
         
-        return AudioProcessResponse(
-            reply=reply,
-            error=None,
-            audio_url=audio_url,  # URL to audio file, never raw binary
-            music_command=None,
-            truncated=0
-        )
+        # Get AI reply
+        reply = ai.get_together_ai_reply(sanitized_messages, personality, max_tokens)
+        reply = sanitize_ai_response(reply)
+        
+        # Check for music commands
+        music_result = None
+        if any(keyword in reply.lower() for keyword in ["play", "pause", "next", "previous", "music"]):
+            # Extract Spotify token from request if available
+            spotify_token = data.get("spotify_token", "")
+            if spotify_token:
+                music_result = handle_music_command(reply, spotify_token)
+        
+        response_data = {
+            "reply": reply,
+            "error": None,
+            "audio_url": None,
+            "music_command": music_result.get("command") if music_result else None,
+            "truncated": 0
+        }
+        
+        return create_utf8_safe_json_response(response_data)
+        
     except Exception as e:
-        return AudioProcessResponse(
-            reply="",
-            error=str(e),
-            audio_url=None,
-            music_command=None,
-            truncated=0
-        )
+        logger.exception("Critical error in process_audio")
+        emergency_response = get_emergency_fallback_response()
+        emergency_response["error"] = f"Processing error: {str(e)[:100]}"
+        return create_utf8_safe_json_response(emergency_response, status_code=500)
 
-# Add other endpoints as needed...
-
-# Function to generate audio and return a URL (not the raw audio)
-def generate_audio_url(text: str) -> Optional[str]:
+# Route to your existing enhanced audio processing
+@app.post("/api/process_audio_enhanced")
+async def process_audio_enhanced_endpoint(
+    audio: UploadFile = File(None),
+    text_input: str = Form(None),
+    voice_mode: str = Form("Base"),
+    conversation_id: str = Form(None),
+    emotion_context: str = Form("{}")
+):
     """
-    Generate audio from text and return a URL to access it.
-    Never return raw audio bytes in JSON response.
-    
-    Args:
-        text: Text to convert to speech
-        
-    Returns:
-        URL string to access the audio file, or None if generation failed
+    Route to your existing process_audio_enhanced function
     """
     try:
-        # Implementation would go here
-        # 1. Generate audio file
-        # 2. Save to disk or cloud storage
-        # 3. Return URL to the file
-        return None  # Placeholder
+        # Parse emotion context
+        try:
+            emotion_dict = json.loads(emotion_context) if emotion_context else {}
+        except:
+            emotion_dict = {}
+        
+        # Call your existing function
+        result = await process_audio_enhanced(
+            audio=audio,
+            text_input=text_input,
+            voice_mode=voice_mode,
+            conversation_id=conversation_id,
+            emotion_context=emotion_dict
+        )
+        
+        return result
+        
     except Exception as e:
-        print(f"Error generating audio: {str(e)}")
-        return None
+        logger.exception("Error in enhanced audio processing")
+        return create_utf8_safe_json_response(
+            get_emergency_fallback_response(),
+            status_code=500
+        )
+
+# Add WebSocket support if you want the real-time conversation mode
+try:
+    from fastapi import WebSocket
+    from conversation_mode import websocket_endpoint
+    
+    @app.websocket("/ws/conversation/{user_id}")
+    async def conversation_websocket(websocket: WebSocket, user_id: str):
+        """WebSocket endpoint for real-time conversation mode"""
+        await websocket_endpoint(websocket, user_id)
+except ImportError:
+    logger.info("WebSocket conversation mode not available")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=5020, reload=False)
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=5020,
+        reload=True,
+        log_level="info"
+    )
