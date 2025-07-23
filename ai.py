@@ -2,6 +2,7 @@ import os
 import json
 import requests
 from dotenv import load_dotenv
+import whisper
 
 load_dotenv()
 
@@ -9,6 +10,11 @@ TOGETHER_AI_API_KEY = os.getenv("TOGETHER_AI_API_KEY")
 TOGETHER_AI_BASE_URL = "https://api.together.xyz/v1"
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
+
+def transcribe_with_whisper(audio_path):
+    model = whisper.load_model("base")  # Or "small", "medium", etc. for speed/accuracy tradeoff
+    result = model.transcribe(audio_path)
+    return result["text"].strip()
 
 def generate_elevenlabs_audio(text, voice_id=None):
     api_key = ELEVENLABS_API_KEY
