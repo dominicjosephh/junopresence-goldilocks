@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
+from fastapi.responses import FileResponse
 import os
 import json
 import base64
@@ -46,6 +47,13 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 app = FastAPI(title="JunoPresence Emotion AI Backend", version="2.0.0")
+
+@app.get("/api/audio/{audio_filename}")
+async def get_audio(audio_filename: str):
+    audio_path = os.path.join("audio_output", audio_filename)
+    if not os.path.isfile(audio_path):
+        return JSONResponse({"error": "File not found"}, status_code=404)
+    return FileResponse(audio_path, media_type="audio/mpeg")
 
 # CORS middleware
 app.add_middleware(

@@ -9,6 +9,22 @@ logger = logging.getLogger(__name__)
 TOGETHER_AI_API_KEY = os.getenv("TOGETHER_AI_API_KEY")
 TOGETHER_AI_BASE_URL = "https://api.together.xyz/v1"
 
+def transcribe_with_whisper(audio_path):
+    # Use Whisper/OpenAI or your preferred transcription
+    import whisper
+    model = whisper.load_model("base")  # Or 'small', etc.
+    result = model.transcribe(audio_path)
+    return result["text"].strip()
+
+def get_together_ai_reply(messages, personality="Base", max_tokens=150):
+    # Your TogetherAI LLM call as before
+    # ...
+
+def generate_tts_audio(text, output_dir):
+    # Your ElevenLabs TTS call, returns saved filename (not bytes)
+    # ...
+    # return filename
+
 def get_together_ai_reply(messages, personality="Base", max_tokens=150):
     """
     Calls TogetherAI LLM and returns UTF-8 safe reply text.
