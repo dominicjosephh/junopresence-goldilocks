@@ -52,17 +52,21 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
         print("❌ Error from TogetherAI:", str(e))
         return f"Error from TogetherAI: {str(e)}"
 
+# ---------- ELEVENLABS TTS ----------
 def generate_tts_audio(text, output_dir):
     """
-    Dummy TTS implementation – replace with actual ElevenLabs or other TTS logic.
+    Replace this stub with your ElevenLabs TTS logic.
     """
-    print(f"🔊 [Dummy TTS] Would generate audio for text: {text} in {output_dir}")
+    print(f"🔊 [TTS] Would generate audio for: {text} in {output_dir}")
+    # Actual implementation here
     return f"{output_dir}/dummy_audio.mp3"
 
+# ---------- WHISPER TRANSCRIPTION ----------
 def transcribe_with_whisper(audio_path_or_bytes):
     """
-    Dummy Whisper implementation – replace with actual Whisper code.
+    Replace this stub with your Whisper ASR logic.
     Accepts audio file path or bytes.
     """
-    print(f"📝 [Dummy Whisper] Would transcribe audio: {audio_path_or_bytes}")
+    print(f"📝 [Whisper] Would transcribe: {audio_path_or_bytes}")
+    # Actual implementation here
     return "Transcription not implemented."
