@@ -1,50 +1,47 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-import os
-from dotenv import load_dotenv
-from ai import get_together_ai_reply, transcribe_with_whisper
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from ai import get_together_ai_reply
+from tts_handler import generate_tts_audio
 
-load_dotenv()
+import os
 
 app = FastAPI()
 
-# Allow CORS for your frontend (modify origins as needed)
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change for prod
+    allow_origins=["*"],  # Update for prod!
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Serve static files for TTS audio
+if not os.path.exists("static"):
+    os.makedirs("static")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 @app.post("/api/chat")
 async def chat_endpoint(request: Request):
-    try:
-        data = await request.json()
-        messages = data.get("messages", [])
-        personality = data.get("personality", "Base")
-        reply = get_together_ai_reply(messages, personality)
-        return JSONResponse(content={"reply": reply, "error": None})
-    except Exception as e:
-        return JSONResponse(
-            content={"reply": None, "error": f"Server error: {str(e)}"},
-            status_code=500
-        )
+    data = await request.json()
+    messages = data.get("messages", [])
+    personality = data.get("personality", "Base")
+    reply = get_together_ai_reply(messages, personality)
+    return JSONResponse(content={"reply": reply, "error": None})
 
-@app.post("/api/whisper")
-async def whisper_endpoint(request: Request):
-    # Example for future use, right now just a stub
-    try:
-        # You would normally get a file here
-        return JSONResponse(content={"transcript": "Not implemented."})
-    except Exception as e:
-        return JSONResponse(content={"transcript": None, "error": str(e)}, status_code=500)
+@app.post("/api/tts")
+async def tts_endpoint(request: Request):
+    data = await request.json()
+    text = data.get("text", "")
+    if not text:
+        return JSONResponse(content={"error": "No text provided"}, status_code=400)
+    audio_url = generate_tts_audio(text)
+    if not audio_url:
+        return JSONResponse(content={"error": "TTS failed"}, status_code=500)
+    return JSONResponse(content={"audio_url": audio_url})
 
 @app.get("/")
 async def root():
     return {"status": "ok"}
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=5020, reload=True)
