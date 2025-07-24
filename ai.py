@@ -53,10 +53,16 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
         return f"Error from TogetherAI: {str(e)}"
 
 def generate_tts_audio(text, output_dir):
-    # TODO: Implement TTS logic
-    pass
+    """
+    Dummy TTS implementation – replace with actual ElevenLabs or other TTS logic.
+    """
+    print(f"🔊 [Dummy TTS] Would generate audio for text: {text} in {output_dir}")
+    return f"{output_dir}/dummy_audio.mp3"
 
-def transcribe_with_whisper(audio_path):
-    # TODO: Implement Whisper logic
-    # This stub fixes the import error!
+def transcribe_with_whisper(audio_path_or_bytes):
+    """
+    Dummy Whisper implementation – replace with actual Whisper code.
+    Accepts audio file path or bytes.
+    """
+    print(f"📝 [Dummy Whisper] Would transcribe audio: {audio_path_or_bytes}")
     return "Transcription not implemented."
