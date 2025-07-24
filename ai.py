@@ -2,8 +2,6 @@ import os
 import requests
 import json
 
-# Example: Add your TTS, TogetherAI, and other functions below
-
 TOGETHER_AI_API_KEY = os.getenv("TOGETHER_AI_API_KEY")
 TOGETHER_AI_BASE_URL = "https://api.together.xyz/v1"
 
@@ -55,8 +53,10 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
         return f"Error from TogetherAI: {str(e)}"
 
 def generate_tts_audio(text, output_dir):
-    # TODO: Implement the ElevenLabs (or other) TTS here!
-    # This stub fixes the IndentationError
+    # TODO: Implement TTS logic
     pass
 
-# Your other AI-related functions go below...
+def transcribe_with_whisper(audio_path):
+    # TODO: Implement Whisper logic
+    # This stub fixes the import error!
+    return "Transcription not implemented."
