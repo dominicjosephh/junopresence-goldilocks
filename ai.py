@@ -1,57 +1,34 @@
-import os
-import requests
-import json
+import whisper
+import chat  # Import the chat module for sending requests to TogetherAI
 
-TOGETHER_AI_API_KEY = os.getenv("TOGETHER_AI_API_KEY")
-TOGETHER_AI_BASE_URL = "https://api.together.xyz/v1"
+# Load the Whisper model globally to avoid re-loading it on each request.
+# Using the base Whisper model (for English) by default; adjust model size if needed.
+_whisper_model = whisper.load_model("base")
 
-def get_together_ai_reply(messages, personality="Base", max_tokens=150):
-    system_message = {
-        "role": "system",
-        "content": (
-            "You are a friendly, expressive, and emotionally-aware AI assistant. "
-            "Respond to the user in a warm, vivid, and natural conversational style. "
-            "If the user asks about feelings or mood, answer in a human, relatable way."
-        )
-    }
-    if not messages or messages[0].get("role") != "system":
-        messages = [system_message] + messages
+def transcribe_with_whisper(audio_path: str) -> str:
+    """
+    Transcribe speech from an audio file using OpenAI's Whisper model.
+    :param audio_path: Path to the audio file to transcribe.
+    :return: Transcribed text from the audio.
+    """
+    # Use the Whisper model to transcribe the audio file
+    result = _whisper_model.transcribe(audio_path)
+    return result.get("text", "")  # Return the text part of the transcription result
 
-    payload = {
-        "model": "mistralai/Mistral-7B-Instruct-v0.3",
-        "messages": messages,
-        "temperature": 0.7,
-        "top_p": 0.9,
-        "max_tokens": max_tokens
-    }
-
-    print("PAYLOAD:", json.dumps(payload, indent=2))
-    headers = {
-        "Authorization": f"Bearer {TOGETHER_AI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    try:
-        response = requests.post(
-            f"{TOGETHER_AI_BASE_URL}/chat/completions",
-            headers=headers,
-            json=payload
-        )
-        print("RAW RESPONSE TEXT:", response.text)
-        response.raise_for_status()
-        data = response.json()
-        print("PARSED JSON:", data)
-        if "choices" in data and data["choices"]:
-            print("✅ Got choices:", data["choices"])
-            return data["choices"][0]["message"]["content"]
-        else:
-            print("❗️No choices in response! Full data dump:", data)
-            return "No valid reply from TogetherAI."
-    except Exception as e:
-        print("❌ Error from TogetherAI:", str(e))
-        return f"Error from TogetherAI: {str(e)}"
-
-def transcribe_with_whisper(audio_path):
-    # Dummy Whisper stub—replace with real transcription if needed
-    print(f"[Whisper] Would transcribe file: {audio_path}")
-    return "Transcription not implemented."
+def generate_reply(user_message: str, context_messages: list = None) -> str:
+    """
+    Generate a reply from the AI model given a user message.
+    Optionally include context_messages (list of {'role': ..., 'content': ...} dicts)
+    to provide conversation history or system prompts.
+    :param user_message: The latest user input as text.
+    :param context_messages: (Optional) List of previous messages (with roles) for context.
+    :return: The assistant's reply text.
+    """
+    if context_messages is None:
+        context_messages = []
+    # Assemble the conversation messages, including any prior context and the new user message
+    messages = list(context_messages)  # copy to avoid modifying the original list
+    messages.append({"role": "user", "content": user_message})
+    # Use TogetherAI chat completion API to get the assistant's reply
+    reply_text = chat.chat_completion(messages)
+    return reply_text
