@@ -1,5 +1,4 @@
 from fastapi import APIRouter, UploadFile, File, Form
-from fastapi.responses import JSONResponse
 from ai import transcribe_with_whisper
 import tempfile
 import os
@@ -25,12 +24,7 @@ async def convo_mode_endpoint(
         # Clean up temp file
         os.remove(tmp_path)
 
-        return JSONResponse(content={
-            "reply": transcription or "(No reply generated)"
-        })
+        return {"reply": transcription or "(No reply generated)"}
 
     except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"Failed to process audio: {e}"}
-        )
+        return {"error": f"Failed to process audio: {e}"}

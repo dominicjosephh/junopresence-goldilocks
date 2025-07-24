@@ -14,7 +14,6 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
             "If the user asks about feelings or mood, answer in a human, relatable way."
         )
     }
-
     if not messages or messages[0].get("role") != "system":
         messages = [system_message] + messages
 
@@ -52,21 +51,7 @@ def get_together_ai_reply(messages, personality="Base", max_tokens=150):
         print("❌ Error from TogetherAI:", str(e))
         return f"Error from TogetherAI: {str(e)}"
 
-# ---------- ELEVENLABS TTS ----------
-def generate_tts_audio(text, output_dir):
-    """
-    Replace this stub with your ElevenLabs TTS logic.
-    """
-    print(f"🔊 [TTS] Would generate audio for: {text} in {output_dir}")
-    # Actual implementation here
-    return f"{output_dir}/dummy_audio.mp3"
-
-# ---------- WHISPER TRANSCRIPTION ----------
-def transcribe_with_whisper(audio_path_or_bytes):
-    """
-    Replace this stub with your Whisper ASR logic.
-    Accepts audio file path or bytes.
-    """
-    print(f"📝 [Whisper] Would transcribe: {audio_path_or_bytes}")
-    # Actual implementation here
+def transcribe_with_whisper(audio_path):
+    # Dummy Whisper stub—replace with real transcription if needed
+    print(f"[Whisper] Would transcribe file: {audio_path}")
     return "Transcription not implemented."
